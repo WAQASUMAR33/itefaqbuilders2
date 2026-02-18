@@ -291,25 +291,20 @@ export default function DashboardContent({ activeTab }) {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {kpiData.map((kpi, index) => (
-              <div key={index} className="rounded-2xl shadow-lg border border-gray-200 hover:shadow-xl transition-all duration-300 overflow-hidden">
-                <div className="flex">
-                  <div className={`w-1 bg-gradient-to-b ${kpi.color}`} />
-                  <div className="flex-1 bg-white p-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-600 mb-1">{kpi.title}</p>
-                        <p className="text-3xl font-bold text-gray-900 inline-block border border-gray-100 rounded-md px-3 py-1">{kpi.value}</p>
-                        <div className="flex items-center mt-2 space-x-2">
-                          <span className={`text-sm font-medium inline-flex items-center px-2 py-1 rounded-md border ${kpi.changeType === 'positive' ? 'border-green-100 bg-green-50 text-green-600' : 'border-red-100 bg-red-50 text-red-600'}`}>
-                            {kpi.change}
-                          </span>
-                          <span className="text-sm text-gray-500">from last month</span>
-                        </div>
-                      </div>
-                      <div className={`w-16 h-16 bg-gradient-to-r ${kpi.color} rounded-2xl flex items-center justify-center shadow-lg`}>
-                        <kpi.icon className="w-8 h-8 text-white" />
-                      </div>
+              <div key={index} className="bg-white rounded-2xl shadow-lg border-2 border-gray-300 p-6 hover:shadow-xl transition-all duration-300">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-600 mb-1">{kpi.title}</p>
+                    <p className="text-3xl font-bold text-gray-900">{kpi.value}</p>
+                    <div className="flex items-center mt-2">
+                      <span className={`text-sm font-medium ${kpi.changeType === 'positive' ? 'text-green-600' : 'text-red-600'}`}>
+                        {kpi.change}
+                      </span>
+                      <span className="text-sm text-gray-500 ml-1">from last month</span>
                     </div>
+                  </div>
+                  <div className={`w-16 h-16 bg-gradient-to-r ${kpi.color} rounded-2xl flex items-center justify-center shadow-lg`}>
+                    <kpi.icon className="w-8 h-8 text-white" />
                   </div>
                 </div>
               </div>
