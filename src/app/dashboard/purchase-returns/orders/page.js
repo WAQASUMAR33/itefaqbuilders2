@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo, useCallback, Suspense, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
-import DashboardLayout from '../components/dashboard-layout';
 
 // Material-UI imports
 import {
@@ -2192,25 +2191,22 @@ function OrdersPageContent() {
 
   if (loading) {
     return (
-      <DashboardLayout>
-        <Box
-          sx={{
-            minHeight: '100vh',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            bgcolor: 'background.default'
-          }}
-        >
-          <CircularProgress size={80} />
-        </Box>
-      </DashboardLayout>
+      <Box
+        sx={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          bgcolor: 'background.default'
+        }}
+      >
+        <CircularProgress size={80} />
+      </Box>
     );
   }
 
   // Render Sales Create View
   const renderSalesCreateView = () => (
-    <DashboardLayout>
       <Container
         maxWidth={false}
         sx={{
@@ -3832,11 +3828,9 @@ function OrdersPageContent() {
           }
         `}</style>
       </Container>
-    </DashboardLayout>
-  );
+    );
 
   const renderSalesListView = () => (
-    <DashboardLayout>
       <Container
         maxWidth={false}
         sx={{
@@ -4407,8 +4401,7 @@ function OrdersPageContent() {
           </Card>
         </Stack>
       </Container>
-    </DashboardLayout>
-  );
+    );
 
   return (
     <>
@@ -5814,26 +5807,24 @@ function OrdersPageContent() {
 export default function OrdersPage() {
   return (
     <Suspense fallback={
-      <DashboardLayout>
-        <Container
-          maxWidth={false}
-          sx={{
-            py: 4,
-            maxWidth: {
-              xs: '100%',           // Mobile: full width
-              sm: '100%',           // Small screens: full width  
-              md: '100%',           // Medium screens: full width
-              lg: '1200px',         // Large screens: reasonable max width
-              xl: '1400px'          // Extra large screens: slightly larger max width
-            },
-            mx: 'auto',             // Center the content
-            px: { xs: 2, sm: 3, md: 4 } // Responsive horizontal padding
-          }}>
-          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
-            <CircularProgress />
-          </Box>
-        </Container>
-      </DashboardLayout>
+      <Container
+        maxWidth={false}
+        sx={{
+          py: 4,
+          maxWidth: {
+            xs: '100%',           // Mobile: full width
+            sm: '100%',           // Small screens: full width  
+            md: '100%',           // Medium screens: full width
+            lg: '1200px',         // Large screens: reasonable max width
+            xl: '1400px'          // Extra large screens: slightly larger max width
+          },
+          mx: 'auto',             // Center the content
+          px: { xs: 2, sm: 3, md: 4 } // Responsive horizontal padding
+        }}>
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
+          <CircularProgress />
+        </Box>
+      </Container>
     }>
       <OrdersPageContent />
     </Suspense>
