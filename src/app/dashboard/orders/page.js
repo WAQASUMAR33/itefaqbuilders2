@@ -201,14 +201,11 @@ function OrdersPageContent() {
   const [cities, setCities] = useState([]);
   const customerNameInputRef = useRef(null);
 
-  // Open customer popup and focus Account Name first (do NOT pre-select Account Type)
+  // Open customer popup and focus Account Name first
   const handleOpenCustomerPopup = (preferredType = 'customer') => {
     setNewCustomer(prev => ({ ...prev, cus_type: '' }));
     setCustomerPopupOpen(true);
-    setTimeout(() => {
-      setCustomerTypeOpen(false);
-      setTimeout(() => customerNameInputRef.current?.focus(), 50);
-    }, 80);
+    setCustomerTypeOpen(false);
   };
 
   // Popup states for adding new category, type, and city
@@ -3000,7 +2997,7 @@ function OrdersPageContent() {
                       value={paymentData.labour === 0 ? '' : paymentData.labour}
                       onChange={(e) => handlePaymentDataChange('labour', e.target.value)}
                       onFocus={(e) => e.target.select()}
-                      inputProps={{ step: 'any' }}
+                      inputProps={{ min: 0, step: 'any' }}
                       sx={{ bgcolor: 'white', '& .MuiInputBase-input': { padding: '8px' }, flex: 1 }}
                       placeholder=" "
                     />
@@ -3014,27 +3011,16 @@ function OrdersPageContent() {
                     <TextField
                       size="small"
                       type="number"
-                      value={(() => {
-                        const totalDelivery = (parseFloat(paymentData.deliveryCharges || 0) + calculateTransportTotal());
-                        if (totalDelivery === 0) return '';
-                        return totalDelivery.toFixed(2);
-                      })()
-                      }
-                      onChange={(e) => {
-                        // Calculate delivery charges by subtracting transport from total
-                        const totalValue = parseFloat(e.target.value) || 0;
-                        const transportTotal = calculateTransportTotal();
-                        const deliveryOnly = totalValue - transportTotal;
-                        handlePaymentDataChange('deliveryCharges', deliveryOnly >= 0 ? deliveryOnly : 0);
-                      }}
+                      value={paymentData.deliveryCharges === 0 ? '' : paymentData.deliveryCharges}
+                      onChange={(e) => handlePaymentDataChange('deliveryCharges', e.target.value)}
                       onFocus={(e) => e.target.select()}
-                      inputProps={{ step: 'any' }}
+                      inputProps={{ min: 0, step: 'any' }}
                       sx={{ bgcolor: 'white', '& .MuiInputBase-input': { padding: '8px', fontWeight: 'bold' }, flex: 1 }}
                       placeholder=" "
                     />
                     {calculateTransportTotal() > 0 && (
                       <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
-                        (includes Transport: {calculateTransportTotal().toFixed(2)})
+                        (+ Transport: {calculateTransportTotal().toFixed(2)})
                       </Typography>
                     )}
                   </Box>
@@ -3050,7 +3036,7 @@ function OrdersPageContent() {
                       value={paymentData.discount === 0 ? '' : paymentData.discount}
                       onChange={(e) => handlePaymentDataChange('discount', e.target.value)}
                       onFocus={(e) => e.target.select()}
-                      inputProps={{ step: 'any' }}
+                      inputProps={{ min: 0, step: 'any' }}
                       sx={{ bgcolor: 'white', '& .MuiInputBase-input': { padding: '8px' }, flex: 1 }}
                       placeholder=" "
                     />
@@ -4437,7 +4423,6 @@ function OrdersPageContent() {
       {/* Customer Creation Popup */}
       <Dialog
         open={customerPopupOpen}
-        disableAutoFocus
         onClose={handleCloseCustomerPopup}
         maxWidth="md"
         fullWidth
@@ -4553,6 +4538,7 @@ function OrdersPageContent() {
                 <TextField
                   fullWidth
                   required
+                  autoFocus
                   inputRef={customerNameInputRef}
                   label="Account Name"
                   name="cus_name"
@@ -4655,49 +4641,26 @@ function OrdersPageContent() {
                     selectOnFocus
                     autoSelect
                     sx={{ flex: 1 }}
-                    options={[
-                      { id: '', title: 'Select a type' },
-                      ...customerTypes.map(type => ({
-                        id: type.cus_type_id,
-                        title: type.cus_type_title
-                      }))
-                    ]}
-                    value={(() => {
-                      const options = [
-                        { id: '', title: 'Select a type' },
-                        ...customerTypes.map(type => ({
-                          id: type.cus_type_id,
-                          title: type.cus_type_title
-                        }))
-                      ];
-                      return options.find(option => option.id === newCustomer.cus_type) || { id: '', title: 'Select a type' };
-                    })()}
+                    options={customerTypes.map(type => ({
+                      id: type.cus_type_id,
+                      title: type.cus_type_title
+                    }))}
+                    value={customerTypes.map(type => ({
+                      id: type.cus_type_id,
+                      title: type.cus_type_title
+                    })).find(option => option.id === newCustomer.cus_type) || null}
                     onChange={(event, newValue) => {
                       setNewCustomer(prev => ({
                         ...prev,
                         cus_type: newValue ? newValue.id : ''
                       }));
                     }}
-                    getOptionLabel={(option) => option.title}
-                    open={customerTypeOpen}
-                    onOpen={() => setCustomerTypeOpen(true)}
-                    onClose={() => setCustomerTypeOpen(false)}
+                    getOptionLabel={(option) => option.title || ''}
                     renderInput={(params) => (
                       <TextField
                         {...params}
                         label="Account Type"
                         sx={{ minWidth: 250 }}
-                        onKeyDown={(e) => {
-                          // If user tabs into this field and the dropdown is open, pick the first real type when none selected
-                          if (e.key === 'Tab' && customerTypeOpen) {
-                            const firstType = customerTypes && customerTypes.length ? customerTypes[0].cus_type_id : '';
-                            if (!newCustomer.cus_type && firstType) {
-                              setNewCustomer(prev => ({ ...prev, cus_type: firstType }));
-                            }
-                            setCustomerTypeOpen(false);
-                            // allow normal tab navigation to continue
-                          }
-                        }}
                         InputProps={{
                           ...params.InputProps,
                           startAdornment: (
@@ -4732,41 +4695,26 @@ function OrdersPageContent() {
                     selectOnFocus
                     autoSelect
                     sx={{ flex: 1 }}
-                    options={[
-                      { id: '', title: 'Select a category' },
-                      ...customerCategories.map(category => ({
-                        id: category.cus_cat_id,
-                        title: category.cus_cat_title
-                      }))
-                    ]}
-                    value={(() => {
-                      const options = [
-                        { id: '', title: 'Select a category' },
-                        ...customerCategories.map(category => ({
-                          id: category.cus_cat_id,
-                          title: category.cus_cat_title
-                        }))
-                      ];
-                      return options.find(option => option.id === newCustomer.cus_category) || { id: '', title: 'Select a category' };
-                    })()}
+                    options={customerCategories.map(category => ({
+                      id: category.cus_cat_id,
+                      title: category.cus_cat_title
+                    }))}
+                    value={customerCategories.map(category => ({
+                      id: category.cus_cat_id,
+                      title: category.cus_cat_title
+                    })).find(option => option.id === newCustomer.cus_category) || null}
                     onChange={(event, newValue) => {
                       setNewCustomer(prev => ({
                         ...prev,
                         cus_category: newValue ? newValue.id : ''
                       }));
                     }}
-                    getOptionLabel={(option) => option.title}
+                    getOptionLabel={(option) => option.title || ''}
                     renderInput={(params) => (
                       <TextField
                         {...params}
                         label="Account Category"
                         sx={{ minWidth: 250 }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Tab' && params.inputProps?.ariaExpanded) {
-                            const firstCat = customerCategories && customerCategories.length ? customerCategories[0].cus_cat_id : '';
-                            if (!newCustomer.cus_category && firstCat) setNewCustomer(prev => ({ ...prev, cus_category: firstCat }));
-                          }
-                        }}
                         InputProps={{
                           ...params.InputProps,
                           startAdornment: (
@@ -4825,41 +4773,26 @@ function OrdersPageContent() {
                     selectOnFocus
                     autoSelect
                     sx={{ flex: 1 }}
-                    options={[
-                      { id: '', title: 'Select a city' },
-                      ...cities.map(city => ({
-                        id: city.city_id,
-                        title: city.city_name
-                      }))
-                    ]}
-                    value={(() => {
-                      const options = [
-                        { id: '', title: 'Select a city' },
-                        ...cities.map(city => ({
-                          id: city.city_id,
-                          title: city.city_name
-                        }))
-                      ];
-                      return options.find(option => option.id === newCustomer.city_id) || { id: '', title: 'Select a city' };
-                    })()}
+                    options={cities.map(city => ({
+                      id: city.city_id,
+                      title: city.city_name
+                    }))}
+                    value={cities.map(city => ({
+                      id: city.city_id,
+                      title: city.city_name
+                    })).find(option => option.id === newCustomer.city_id) || null}
                     onChange={(event, newValue) => {
                       setNewCustomer(prev => ({
                         ...prev,
                         city_id: newValue ? newValue.id : ''
                       }));
                     }}
-                    getOptionLabel={(option) => option.title}
+                    getOptionLabel={(option) => option.title || ''}
                     renderInput={(params) => (
                       <TextField
                         {...params}
                         label="City"
                         sx={{ minWidth: 250 }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Tab' && params.inputProps?.ariaExpanded) {
-                            const firstCity = cities && cities.length ? cities[0].city_id : '';
-                            if (!newCustomer.city_id && firstCity) setNewCustomer(prev => ({ ...prev, city_id: firstCity }));
-                          }
-                        }}
                         InputProps={{
                           ...params.InputProps,
                           startAdornment: (

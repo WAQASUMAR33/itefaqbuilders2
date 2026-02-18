@@ -1140,6 +1140,7 @@ export default function CustomersPage() {
                   <TextField
                     fullWidth
                     required
+                    autoFocus
                     label="Account Name"
                     name="cus_name"
                     value={formData.cus_name}
@@ -1290,12 +1291,6 @@ export default function CustomersPage() {
                         required
                         onFocus={(e) => e.target.select()}
                         sx={{ minWidth: 250 }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Tab' && params.inputProps?.ariaExpanded) {
-                            const firstCat = customerCategories && customerCategories.length ? customerCategories[0].cus_cat_id : '';
-                            if (!formData.cus_category && firstCat) setFormData(prev => ({ ...prev, cus_category: firstCat }));
-                          }
-                        }}
                         InputProps={{
                           ...params.InputProps,
                           startAdornment: (
@@ -1363,12 +1358,6 @@ export default function CustomersPage() {
                         label="City"
                         onFocus={(e) => e.target.select()}
                         sx={{ minWidth: 250 }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Tab' && params.inputProps?.ariaExpanded) {
-                            const firstCity = cities && cities.length ? cities[0].city_id : '';
-                            if (!formData.city_id && firstCity) setFormData(prev => ({ ...prev, city_id: firstCity }));
-                          }
-                        }}
                         InputProps={{
                           ...params.InputProps,
                           startAdornment: (

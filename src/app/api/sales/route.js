@@ -669,6 +669,7 @@ export async function POST(request) {
     console.log(`   actualIsLoadedOrder: ${actualIsLoadedOrder}`);
     console.log(`   bill_type: ${bill_type}`);
     console.log(`   Customer ID: ${cus_id}`);
+    console.log(`   incoming payment: ${payment}, cash_payment: ${cash_payment}, bank_payment: ${bank_payment}, advance_payment: ${advance_payment}`);
 
     // Use transaction to ensure data consistency with increased timeout (30 seconds)
     const result = await prisma.$transaction(async (tx) => {

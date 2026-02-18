@@ -244,11 +244,7 @@ function PurchasesPageContent() {
     // Open the dialog and keep Account Type blank. Focus Account Name so user can type the name first.
     setCustomerFormData(prev => ({ ...prev, cus_type: '' }));
     setShowCustomerForm(true);
-    // ensure the Account Type dropdown is closed and focus the Account Name input after the dialog mounts
-    setTimeout(() => {
-      setCustomerTypeOpenPurchases(false);
-      setTimeout(() => customerNameInputRefPurchases.current?.focus(), 50);
-    }, 80);
+    setCustomerTypeOpenPurchases(false);
   };
   const [customerFormData, setCustomerFormData] = useState({
     cus_name: '',
@@ -3680,7 +3676,7 @@ function PurchasesPageContent() {
                           onChange={(e) => {
                             setFormData(prev => ({ ...prev, cash_payment: e.target.value }));
                           }}
-                          inputProps={{ min: 0 }}
+                          inputProps={{ min: 0, step: 'any' }}
                           sx={{ width: '100%' }}
                           placeholder="Enter amount"
                         />
@@ -3707,7 +3703,7 @@ function PurchasesPageContent() {
                               } // otherwise allow normal Tab behavior (skip bank account)
                             }
                           }}
-                          inputProps={{ min: 0 }}
+                          inputProps={{ min: 0, step: 'any' }}
                           sx={{ width: '100%' }}
                           placeholder="Enter amount"
                         />
@@ -3861,7 +3857,7 @@ function PurchasesPageContent() {
                                   return { ...prev, incity_own_labour: newVal, purchase_details: updatedDetails };
                                 });
                               }}
-                              inputProps={{ min: 0 }}
+                              inputProps={{ min: 0, step: 'any' }}
                             />
 
                             <TextField
@@ -3877,7 +3873,7 @@ function PurchasesPageContent() {
                                   return { ...prev, incity_own_delivery: newVal, purchase_details: updatedDetails };
                                 });
                               }}
-                              inputProps={{ min: 0 }}
+                              inputProps={{ min: 0, step: 'any' }}
                             />
 
                             <TextField
@@ -3999,7 +3995,7 @@ function PurchasesPageContent() {
                                     });
                                   }}
                                   onFocus={(e) => e.target.select()}
-                                  inputProps={{ min: 0 }}
+                                  inputProps={{ min: 0, step: 'any' }}
                                   sx={{ width: 110 }}
                                 />
                                 <TextField
@@ -4015,7 +4011,7 @@ function PurchasesPageContent() {
                                     });
                                   }}
                                   onFocus={(e) => e.target.select()}
-                                  inputProps={{ min: 0 }}
+                                  inputProps={{ min: 0, step: 'any' }}
                                   sx={{ width: 110 }}
                                 />
                                 <TextField
@@ -4087,7 +4083,7 @@ function PurchasesPageContent() {
                           });
                         }}
                         onFocus={(e) => e.target.select()}
-                        inputProps={{ min: 0 }}
+                        inputProps={{ min: 0, step: 'any' }}
                         sx={{ width: 150 }}
                       />
                     </Box>
@@ -4118,7 +4114,7 @@ function PurchasesPageContent() {
                             };
                           });
                         }}
-                        inputProps={{ min: 0 }}
+                        inputProps={{ min: 0, step: 'any' }}
                         sx={{ width: 150 }}
                       />
                     </Box>
@@ -4167,7 +4163,7 @@ function PurchasesPageContent() {
                         value={formData.discount || ''}
                         onChange={(e) => setFormData(prev => ({ ...prev, discount: e.target.value }))}
                         onFocus={(e) => e.target.select()}
-                        inputProps={{ min: 0 }}
+                        inputProps={{ min: 0, step: 'any' }}
                         sx={{ width: 150 }}
                       />
                     </Box>
@@ -4280,7 +4276,6 @@ function PurchasesPageContent() {
       <Dialog
         open={showCustomerForm}
         onClose={handleCloseCustomerForm}
-        disableAutoFocus
         maxWidth="md"
         fullWidth
         PaperProps={{
@@ -4391,6 +4386,7 @@ function PurchasesPageContent() {
                 <TextField
                   fullWidth
                   required
+                  autoFocus
                   inputRef={customerNameInputRefPurchases}
                   label="Account Name"
                   name="cus_name"
@@ -4494,33 +4490,21 @@ function PurchasesPageContent() {
                     selectOnFocus
                     autoSelect
                     sx={{ flex: 1 }}
-                    options={[
-                      { id: '', title: 'Select a type' },
-                      ...customerTypes.map(type => ({
-                        id: type.cus_type_id,
-                        title: type.cus_type_title
-                      }))
-                    ]}
-                    value={(() => {
-                      const options = [
-                        { id: '', title: 'Select a type' },
-                        ...customerTypes.map(type => ({
-                          id: type.cus_type_id,
-                          title: type.cus_type_title
-                        }))
-                      ];
-                      return options.find(option => option.id === customerFormData.cus_type) || { id: '', title: 'Select a type' };
-                    })()}
+                    options={customerTypes.map(type => ({
+                      id: type.cus_type_id,
+                      title: type.cus_type_title
+                    }))}
+                    value={customerTypes.map(type => ({
+                      id: type.cus_type_id,
+                      title: type.cus_type_title
+                    })).find(option => option.id === customerFormData.cus_type) || null}
                     onChange={(event, newValue) => {
                       setCustomerFormData(prev => ({
                         ...prev,
                         cus_type: newValue ? newValue.id : ''
                       }));
                     }}
-                    getOptionLabel={(option) => option.title}
-                    open={customerTypeOpenPurchases}
-                    onOpen={() => setCustomerTypeOpenPurchases(true)}
-                    onClose={() => setCustomerTypeOpenPurchases(false)}
+                    getOptionLabel={(option) => option.title || ''}
                     renderInput={(params) => (
                       <TextField
                         {...params}
@@ -4528,18 +4512,6 @@ function PurchasesPageContent() {
                         label="Account Type"
                         onFocus={(e) => e.target.select()}
                         sx={{ minHeight: 56, minWidth: 220 }}
-                        onKeyDown={(e) => {
-                          // When Tab is pressed while the options are open, set a sensible default
-                          // but do NOT forcibly close the Autocomplete — let MUI handle the Tab selection.
-                          if (e.key === 'Tab' && params.inputProps?.ariaExpanded) {
-                            const firstType = customerTypes && customerTypes.length ? customerTypes[0].cus_type_id : '';
-                            if (!customerFormData.cus_type && firstType) {
-                              setCustomerFormData(prev => ({ ...prev, cus_type: firstType }));
-                            }
-                            // do NOT call setCustomerTypeOpenPurchases(false) here — this was preventing
-                            // the Autocomplete from performing its normal Tab-selection behavior.
-                          }
-                        }}
                         InputProps={{
                           ...params.InputProps,
                           startAdornment: (
@@ -4574,42 +4546,27 @@ function PurchasesPageContent() {
                     selectOnFocus
                     autoSelect
                     sx={{ flex: 1 }}
-                    options={[
-                      { id: '', title: 'Select a category' },
-                      ...customerCategories.map(category => ({
-                        id: category.cus_cat_id,
-                        title: category.cus_cat_title
-                      }))
-                    ]}
-                    value={(() => {
-                      const options = [
-                        { id: '', title: 'Select a category' },
-                        ...customerCategories.map(category => ({
-                          id: category.cus_cat_id,
-                          title: category.cus_cat_title
-                        }))
-                      ];
-                      return options.find(option => option.id === customerFormData.cus_category) || { id: '', title: 'Select a category' };
-                    })()}
+                    options={customerCategories.map(category => ({
+                      id: category.cus_cat_id,
+                      title: category.cus_cat_title
+                    }))}
+                    value={customerCategories.map(category => ({
+                      id: category.cus_cat_id,
+                      title: category.cus_cat_title
+                    })).find(option => option.id === customerFormData.cus_category) || null}
                     onChange={(event, newValue) => {
                       setCustomerFormData(prev => ({
                         ...prev,
                         cus_category: newValue ? newValue.id : ''
                       }));
                     }}
-                    getOptionLabel={(option) => option.title}
+                    getOptionLabel={(option) => option.title || ''}
                     renderInput={(params) => (
                       <TextField
                         {...params}
                         label="Supplier Category"
                         onFocus={(e) => e.target.select()}
                         sx={{ minHeight: 56, minWidth: 220 }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Tab' && params.inputProps?.ariaExpanded) {
-                            const firstCat = customerCategories && customerCategories.length ? customerCategories[0].cus_cat_id : '';
-                            if (!customerFormData.cus_category && firstCat) setCustomerFormData(prev => ({ ...prev, cus_category: firstCat }));
-                          }
-                        }}
                         InputProps={{
                           ...params.InputProps,
                           startAdornment: (
@@ -4645,42 +4602,27 @@ function PurchasesPageContent() {
                     selectOnFocus={true}
                     size="medium"
                     sx={{ flex: 1 }}
-                    options={[
-                      { id: '', title: 'Select a city' },
-                      ...cities.map(city => ({
-                        id: city.city_id,
-                        title: city.city_name
-                      }))
-                    ]}
-                    value={(() => {
-                      const options = [
-                        { id: '', title: 'Select a city' },
-                        ...cities.map(city => ({
-                          id: city.city_id,
-                          title: city.city_name
-                        }))
-                      ];
-                      return options.find(option => option.id === customerFormData.city_id) || { id: '', title: 'Select a city' };
-                    })()}
+                    options={cities.map(city => ({
+                      id: city.city_id,
+                      title: city.city_name
+                    }))}
+                    value={cities.map(city => ({
+                      id: city.city_id,
+                      title: city.city_name
+                    })).find(option => option.id === customerFormData.city_id) || null}
                     onChange={(event, newValue) => {
                       setCustomerFormData(prev => ({
                         ...prev,
                         city_id: newValue ? newValue.id : ''
                       }));
                     }}
-                    getOptionLabel={(option) => option.title}
+                    getOptionLabel={(option) => option.title || ''}
                     renderInput={(params) => (
                       <TextField
                         {...params}
                         label="City"
                         onFocus={(e) => e.target.select()}
                         sx={{ minHeight: 56, minWidth: 220 }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Tab' && params.inputProps?.ariaExpanded) {
-                            const firstCity = cities && cities.length ? cities[0].city_id : '';
-                            if (!customerFormData.city_id && firstCity) setCustomerFormData(prev => ({ ...prev, city_id: firstCity }));
-                          }
-                        }}
                         InputProps={{
                           ...params.InputProps,
                           startAdornment: (
