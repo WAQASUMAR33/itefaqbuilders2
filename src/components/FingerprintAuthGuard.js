@@ -65,8 +65,10 @@ export default function FingerprintAuthGuard({ children }) {
   const [state, setState] = useState('checking');
   const [error, setError] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
+  const [hasCredential, setHasCredential] = useState(false);
 
   useEffect(() => {
+    setHasCredential(!!localStorage.getItem(STORAGE_KEY));
     // Already authed this browser session — skip prompt
     if (sessionStorage.getItem(SESSION_KEY) === 'true') {
       setState('authenticated');
@@ -87,6 +89,7 @@ export default function FingerprintAuthGuard({ children }) {
         setIsRegistering(true);
         await registerFingerprint();
         setIsRegistering(false);
+        setHasCredential(true);
       } else {
         await verifyFingerprint(credId);
       }
@@ -106,6 +109,7 @@ export default function FingerprintAuthGuard({ children }) {
   const handleReset = () => {
     localStorage.removeItem(STORAGE_KEY);
     sessionStorage.removeItem(SESSION_KEY);
+    setHasCredential(false);
     setError('');
     setState('locked');
   };
@@ -159,7 +163,7 @@ export default function FingerprintAuthGuard({ children }) {
                 : 'Customer Ledger is protected. Verify your fingerprint to continue.'}
             </p>
 
-            {!localStorage.getItem(STORAGE_KEY) && state === 'locked' && (
+            {!hasCredential && state === 'locked' && (
               <p className="text-yellow-300 text-xs mb-4">
                 First time? Your fingerprint will be registered for future access.
               </p>
@@ -179,10 +183,10 @@ export default function FingerprintAuthGuard({ children }) {
             >
               {state === 'authenticating'
                 ? isRegistering ? 'Registering...' : 'Verifying...'
-                : localStorage.getItem(STORAGE_KEY) ? 'Scan Fingerprint' : 'Set Up Fingerprint'}
+                : hasCredential ? 'Scan Fingerprint' : 'Set Up Fingerprint'}
             </button>
 
-            {localStorage.getItem(STORAGE_KEY) && state === 'locked' && (
+            {hasCredential && state === 'locked' && (
               <button
                 onClick={handleReset}
                 className="text-xs text-white/40 hover:text-white/60 underline transition-colors"
