@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, Suspense } from 'react';
+import { useState, useEffect, useMemo, useCallback, Suspense, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import DashboardLayout from '../components/dashboard-layout';
 
@@ -38,7 +38,8 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions
+  DialogActions,
+  Divider
 } from '@mui/material';
 
 import {
@@ -61,11 +62,22 @@ import {
   Phone as PhoneIcon,
   Close as CloseIcon,
   LocationOn as MapPinIcon,
-  Business as BusinessIcon
+  Business as BusinessIcon,
+  ArrowBack as ArrowBackIcon,
+  ArrowForward as ArrowForwardIcon,
+  Cancel as CancelIcon
 } from '@mui/icons-material';
 
 function OrdersPageContent() {
   const searchParams = useSearchParams();
+
+  // ========== SCREEN MANAGEMENT STATE ==========
+  const [screenStack, setScreenStack] = useState([]);
+  const [currentScreenIndex, setCurrentScreenIndex] = useState(-1);
+  const [showScreenIndicator, setShowScreenIndicator] = useState(false);
+
+  // Flag to track when we're restoring screen state
+  const [isRestoringScreen, setIsRestoringScreen] = useState(false);
 
   // State management
   const [sales, setSales] = useState([]);
@@ -138,14 +150,23 @@ function OrdersPageContent() {
 
   // Product form state
   const [productFormData, setProductFormData] = useState({
-    quantity: 1,
-    rate: 0,
+    quantity: '',
+    rate: '',
     amount: 0,
     stock: 0
   });
 
   // Product table state
   const [productTableData, setProductTableData] = useState([]);
+
+  // Per-product dropdown 'eye' visibility state (which options show purchase rate)
+  const [visibleCrates, setVisibleCrates] = useState([]);
+  const toggleVisibleCrate = (proId) => {
+    setVisibleCrates(prev => {
+      const exists = prev.includes(proId);
+      return exists ? prev.filter(id => id !== proId) : [...prev, proId];
+    });
+  };
 
   // Transport state
   const [transportOptions, setTransportOptions] = useState([]);
@@ -160,13 +181,13 @@ function OrdersPageContent() {
 
   // Payment and calculation state
   const [paymentData, setPaymentData] = useState({
-    cash: 0,
-    bank: 0,
+    cash: '',
+    bank: '',
     bankAccountId: '',
     totalCashReceived: 0,
-    discount: 0,
-    labour: 0,
-    deliveryCharges: 0,
+    discount: '',
+    labour: '',
+    deliveryCharges: '',
     notes: ''
   });
 
@@ -175,14 +196,36 @@ function OrdersPageContent() {
 
   // Customer creation popup state
   const [customerPopupOpen, setCustomerPopupOpen] = useState(false);
+  const [customerTypeOpen, setCustomerTypeOpen] = useState(false);
   const [customerCategories, setCustomerCategories] = useState([]);
   const [cities, setCities] = useState([]);
+  const customerNameInputRef = useRef(null);
+
+  // Open customer popup and focus Account Name first
+  const handleOpenCustomerPopup = (preferredType = 'customer') => {
+    setNewCustomer(prev => ({ ...prev, cus_type: '' }));
+    setCustomerPopupOpen(true);
+    setCustomerTypeOpen(false);
+  };
+
+  // Popup states for adding new category, type, and city
+  const [showCustomerCategoryPopup, setShowCustomerCategoryPopup] = useState(false);
+  const [showCustomerTypePopup, setShowCustomerTypePopup] = useState(false);
+  const [showCityPopup, setShowCityPopup] = useState(false);
+  const [customerCategoryFormData, setCustomerCategoryFormData] = useState({ cus_cat_title: '' });
+  const [customerTypeFormData, setCustomerTypeFormData] = useState({ cus_type_title: '' });
+  const [cityFormData, setCityFormData] = useState({ city_name: '' });
+  const [isAddingCustomerCategory, setIsAddingCustomerCategory] = useState(false);
+  const [isAddingCustomerType, setIsAddingCustomerType] = useState(false);
+  const [isAddingCity, setIsAddingCity] = useState(false);
+
   const [newCustomer, setNewCustomer] = useState({
     cus_name: '',
     cus_phone_no: '',
     cus_phone_no2: '',
     cus_reference: '',
     cus_account_info: '',
+    cus_address: '',
     other: '',
     cus_category: '',
     cus_type: '',
@@ -210,12 +253,391 @@ function OrdersPageContent() {
     setSnackbar({ open: true, message, severity });
   };
 
+  // ========== SCREEN MANAGEMENT FUNCTIONS ==========
+
+  // Initialize first screen on component mount
+  useEffect(() => {
+    const initialState = {
+      // Customer and store selection
+      formSelectedCustomer: null,
+      formSelectedStore: null,
+
+      // Product table (empty for new order)
+      productTableData: [],
+
+      // Payment data
+      paymentData: {
+        cash: '',
+        bank: '',
+        bankAccountId: '',
+        totalCashReceived: 0,
+        discount: '',
+        labour: '',
+        deliveryCharges: '',
+        notes: ''
+      },
+
+      // Bill type
+      billType: 'ORDER',
+
+      // Product form
+      formSelectedProduct: null,
+      productFormData: {
+        quantity: '',
+        rate: '',
+        amount: 0,
+        stock: 0
+      },
+
+      // Transport
+      newTransport: { amount: 0, accountId: '' },
+      transportAccounts: [],
+      transportOptions: [],
+
+      // Metadata
+      timestamp: new Date().toLocaleTimeString(),
+      customerName: 'New Order'
+    };
+
+    // Set the initial screen stack with screen 1
+    setScreenStack([initialState]);
+    setCurrentScreenIndex(0);
+    console.log('✅ Screen 1 initialized for orders');
+  }, []); // Run only once on component mount
+
+  // Capture current form state (deep copy to avoid reference issues)
+  const captureScreenState = () => {
+    const state = {
+      // Customer and store selection
+      formSelectedCustomer: formSelectedCustomer ? { ...formSelectedCustomer } : null,
+      formSelectedStore: formSelectedStore ? { ...formSelectedStore } : null,
+
+      // Product table (deep copy array)
+      productTableData: JSON.parse(JSON.stringify(productTableData)),
+
+      // Payment data (deep copy)
+      paymentData: JSON.parse(JSON.stringify(paymentData)),
+
+      // Bill type
+      billType: billType,
+
+      // Product form
+      formSelectedProduct: formSelectedProduct ? { ...formSelectedProduct } : null,
+      productFormData: JSON.parse(JSON.stringify(productFormData)),
+
+      // Transport
+      newTransport: JSON.parse(JSON.stringify(newTransport)),
+      transportAccounts: transportAccounts.map(t => ({ ...t })),
+      transportOptions: transportOptions.map(t => ({ ...t })),
+
+      // Metadata
+      timestamp: new Date().toLocaleTimeString(),
+      customerName: formSelectedCustomer?.cus_name || 'New Order'
+    };
+
+    console.log('📸 Order screen state captured:', state);
+    return state;
+  };
+
+  // Restore form state (ensure all updates happen)
+  const restoreScreenState = (state) => {
+    if (!state) {
+      console.warn('⚠️ No state to restore');
+      return;
+    }
+
+    // Set flag to prevent automatic fetching during restoration
+    setIsRestoringScreen(true);
+
+    // Restore all state at once to ensure consistency
+    setFormSelectedCustomer(state.formSelectedCustomer);
+    setFormSelectedStore(state.formSelectedStore);
+    setProductTableData(state.productTableData || []);
+    setPaymentData(state.paymentData || {
+      cash: '',
+      bank: '',
+      bankAccountId: '',
+      totalCashReceived: 0,
+      discount: '',
+      labour: '',
+      deliveryCharges: '',
+      notes: ''
+    });
+    setBillType(state.billType || 'ORDER');
+    setFormSelectedProduct(state.formSelectedProduct);
+    setProductFormData(state.productFormData || {
+      quantity: '',
+      rate: '',
+      amount: 0,
+      stock: 0
+    });
+    setNewTransport(state.newTransport || { amount: 0, accountId: '' });
+    setTransportAccounts(state.transportAccounts || []);
+    setTransportOptions(state.transportOptions || []);
+
+    // Clear the flag after a short delay to allow state updates to complete
+    setTimeout(() => {
+      setIsRestoringScreen(false);
+    }, 100);
+  };
+
+  // Clear form to new order state
+  const clearFormState = () => {
+    console.log('🧹 Clearing order form state');
+    setFormSelectedCustomer(null);
+    setFormSelectedProduct(null);
+    setFormSelectedStore(null);
+    setProductTableData([]);
+    setPaymentData({
+      cash: '',
+      bank: '',
+      bankAccountId: '',
+      totalCashReceived: 0,
+      discount: '',
+      labour: '',
+      deliveryCharges: '',
+      notes: ''
+    });
+    setBillType('ORDER');
+    setProductFormData({
+      quantity: '',
+      rate: '',
+      amount: 0,
+      stock: 0
+    });
+    setNewTransport({ amount: 0, accountId: '' });
+    // Note: transportAccounts are global and should not be cleared
+    setTransportOptions([]);
+    setShowScreenIndicator(true);
+    setTimeout(() => setShowScreenIndicator(false), 1000);
+    showSnackbar('📋 Order form cleared - ready for new entry', 'info');
+  };
+
+  // Open new screen (Ctrl+Right)
+  const openNewScreen = useCallback(() => {
+    console.log('➡️ OPENING NEW ORDER SCREEN');
+    console.log('📷 Current state before capture:', {
+      customer: formSelectedCustomer?.cus_name,
+      products: productTableData.length,
+      totalAmount: paymentData
+    });
+
+    const currentState = captureScreenState();
+    const newStack = screenStack.slice(0, currentScreenIndex + 1);
+
+    // Ensure new screen has current transport accounts
+    const newScreenState = {
+      ...currentState,
+      transportAccounts: transportAccounts.map(t => ({ ...t })),
+      transportOptions: transportOptions.map(t => ({ ...t }))
+    };
+
+    newStack.push(newScreenState);
+
+    console.log('📚 New stack created:', newStack.length, 'screens');
+
+    setScreenStack(newStack);
+    setCurrentScreenIndex(newStack.length - 1);
+
+    // NOW clear form for the new blank screen (but keep transport accounts)
+    clearFormState();
+    showSnackbar(`📋 Order Screen ${newStack.length} | Starting fresh (previous state saved)`, 'info');
+  }, [formSelectedCustomer, formSelectedStore, productTableData, paymentData, billType, formSelectedProduct, productFormData, newTransport, transportAccounts, transportOptions, currentScreenIndex, screenStack]);
+
+  // Go back to previous screen (Ctrl+Left) - NO AUTO-CLEAR, only navigate if possible
+  const goToPreviousScreen = useCallback(() => {
+    console.log('⬅️ GOING TO PREVIOUS ORDER SCREEN');
+    console.log('📊 Current stack:', {
+      currentIndex: currentScreenIndex,
+      stackLength: screenStack.length,
+      stateAtCurrentIndex: screenStack[currentScreenIndex]
+    });
+
+    if (currentScreenIndex > 0) {
+      const previousIndex = currentScreenIndex - 1;
+      const previousState = screenStack[previousIndex];
+
+      console.log('🔄 Restoring from index:', previousIndex);
+      console.log('🔄 State to restore:', previousState);
+
+      restoreScreenState(previousState);
+      setCurrentScreenIndex(previousIndex);
+      showSnackbar(`📋 Order Screen ${previousIndex + 1} | ${previousState.customerName}`, 'info');
+    } else if (currentScreenIndex === 0) {
+      // At first screen - can't go back, just notify user
+      console.log('ℹ️ Already at first screen, cannot go back');
+      showSnackbar('📋 You are at the first screen. Click "Cancel Current" to discard or "Cancel" to save later.', 'info');
+    }
+  }, [currentScreenIndex, screenStack]);
+
+  // Go forward to next screen (Ctrl+Right after going back) - NO AUTO-CLEAR
+  const goToNextScreen = useCallback(() => {
+    console.log('➡️ GOING TO NEXT ORDER SCREEN');
+    if (currentScreenIndex < screenStack.length - 1) {
+      const nextIndex = currentScreenIndex + 1;
+      const nextState = screenStack[nextIndex];
+      restoreScreenState(nextState);
+      setCurrentScreenIndex(nextIndex);
+      showSnackbar(`📋 Order Screen ${nextIndex + 1} | ${nextState.customerName}`, 'info');
+    } else {
+      console.log('ℹ️ Already at last screen');
+      showSnackbar('📋 You are at the last screen. Press Ctrl+Right to create a new screen.', 'info');
+    }
+  }, [currentScreenIndex, screenStack]);
+
+  // Smart forward navigation - Go to next screen OR create new if at the end
+  const handleForwardNavigation = useCallback(() => {
+    console.log('➡️ SMART FORWARD NAVIGATION');
+    console.log('📊 Current status:', {
+      currentIndex: currentScreenIndex,
+      stackLength: screenStack.length,
+      atEnd: currentScreenIndex >= screenStack.length - 1
+    });
+
+    if (currentScreenIndex < screenStack.length - 1) {
+      // Navigate to next existing screen
+      goToNextScreen();
+    } else {
+      // At the end - create new screen
+      openNewScreen();
+    }
+  }, [currentScreenIndex, screenStack, goToNextScreen, openNewScreen]);
+
+  // Cancel current screen (Ctrl+X) - Remove current screen and go to previous
+  const cancelCurrentScreen = useCallback(() => {
+    console.log('❌ CANCELLING CURRENT ORDER SCREEN');
+    console.log('📊 Current stack before cancel:', {
+      currentIndex: currentScreenIndex,
+      stackLength: screenStack.length
+    });
+
+    if (screenStack.length <= 1) {
+      // Only one screen - just clear it
+      console.log('ℹ️ Only one screen - clearing form');
+      clearFormState();
+      showSnackbar('📋 Order form cleared', 'info');
+      return;
+    }
+
+    if (currentScreenIndex === 0) {
+      // At first screen - remove it and shift everything
+      console.log('🗑️ Removing first screen, shifting remaining screens');
+      const newStack = screenStack.slice(1);
+      const newIndex = 0;
+
+      setScreenStack(newStack);
+      setCurrentScreenIndex(newIndex);
+
+      if (newStack.length > 0) {
+        restoreScreenState(newStack[newIndex]);
+        showSnackbar(`📋 Cancelled Screen 1, now on Screen ${newIndex + 1}`, 'info');
+      } else {
+        clearFormState();
+        showSnackbar('📋 All screens cancelled', 'info');
+      }
+    } else {
+      // Remove current screen and go to previous
+      console.log('🗑️ Removing current screen, going to previous');
+      const newStack = [
+        ...screenStack.slice(0, currentScreenIndex),
+        ...screenStack.slice(currentScreenIndex + 1)
+      ];
+      const newIndex = currentScreenIndex - 1;
+
+      setScreenStack(newStack);
+      setCurrentScreenIndex(newIndex);
+      restoreScreenState(newStack[newIndex]);
+      showSnackbar(`📋 Cancelled Screen ${currentScreenIndex + 1}, back to Screen ${newIndex + 1}`, 'info');
+    }
+  }, [currentScreenIndex, screenStack]);
+
+  // Keyboard event handler for screen navigation
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      // Only handle shortcuts when in create view
+      if (currentView !== 'create') return;
+
+      if (event.ctrlKey || event.metaKey) {
+        switch (event.key) {
+          case 'ArrowRight':
+            event.preventDefault();
+            handleForwardNavigation();
+            break;
+          case 'ArrowLeft':
+            event.preventDefault();
+            goToPreviousScreen();
+            break;
+          case 'x':
+          case 'X':
+            event.preventDefault();
+            cancelCurrentScreen();
+            break;
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [currentView, handleForwardNavigation, goToPreviousScreen, cancelCurrentScreen]);
+
   // Auto-select first store when stores load
   useEffect(() => {
     if (!formSelectedStore && Array.isArray(stores) && stores.length > 0) {
       setFormSelectedStore(stores[0]);
     }
   }, [stores]);
+
+  // Auto-filter bank accounts when customers, categories, or types change
+  useEffect(() => {
+    if (customers.length > 0 && customerCategories.length > 0 && customerTypes.length > 0) {
+      console.log('🔍 Auto-filtering bank accounts for orders...');
+      fetchBankAccounts(customers);
+    }
+  }, [customers, customerCategories, customerTypes]);
+
+  // Auto-save when customer changes
+  useEffect(() => {
+    if (currentScreenIndex >= 0 && screenStack[currentScreenIndex]) {
+      const updatedState = captureScreenState();
+      const newStack = [...screenStack];
+      newStack[currentScreenIndex] = updatedState;
+      setScreenStack(newStack);
+      console.log(`💾 Auto-saved on customer change - Order Screen ${currentScreenIndex + 1}`);
+    }
+  }, [formSelectedCustomer]);
+
+  // Auto-save when store changes
+  useEffect(() => {
+    if (currentScreenIndex >= 0 && screenStack[currentScreenIndex]) {
+      const updatedState = captureScreenState();
+      const newStack = [...screenStack];
+      newStack[currentScreenIndex] = updatedState;
+      setScreenStack(newStack);
+      console.log(`💾 Auto-saved on store change - Order Screen ${currentScreenIndex + 1}`);
+    }
+  }, [formSelectedStore]);
+
+  // Auto-save when product table changes
+  useEffect(() => {
+    if (currentScreenIndex >= 0 && screenStack[currentScreenIndex]) {
+      const updatedState = captureScreenState();
+      const newStack = [...screenStack];
+      newStack[currentScreenIndex] = updatedState;
+      setScreenStack(newStack);
+      console.log(`💾 Auto-saved on product table change - Order Screen ${currentScreenIndex + 1}`);
+    }
+  }, [productTableData]);
+
+  // Auto-save when payment data changes
+  useEffect(() => {
+    if (currentScreenIndex >= 0 && screenStack[currentScreenIndex]) {
+      const updatedState = captureScreenState();
+      const newStack = [...screenStack];
+      newStack[currentScreenIndex] = updatedState;
+      setScreenStack(newStack);
+      console.log(`💾 Auto-saved on payment data change - Order Screen ${currentScreenIndex + 1}`);
+    }
+  }, [paymentData]);
 
   const handleSnackbarClose = () => {
     setSnackbar(prev => ({ ...prev, open: false }));
@@ -230,10 +652,10 @@ function OrdersPageContent() {
       // Update product form data with selected product details
       setProductFormData(prev => ({
         ...prev,
-        quantity: 1, // Set quantity to 1
-        rate: parseFloat(selectedProduct.pro_baser_price) || 0, // Use base price as rate
+        quantity: '', // Set quantity to empty
+        rate: parseFloat(selectedProduct.pro_baser_price) || '', // Use base price as rate
         stock: 0, // always derive from store-wise stock when available
-        amount: parseFloat(selectedProduct.pro_baser_price) || 0 // Calculate amount (rate * quantity)
+        amount: 0 // Calculate amount (rate * quantity)
       }));
 
       // If a store is selected, fetch store-wise stock
@@ -243,8 +665,8 @@ function OrdersPageContent() {
     } else {
       // Reset form data when no product is selected
       setProductFormData({
-        quantity: 1,
-        rate: 0,
+        quantity: '',
+        rate: '',
         amount: 0,
         stock: 0
       });
@@ -302,7 +724,7 @@ function OrdersPageContent() {
   const handleQuantityChange = (newQuantity) => {
     const quantity = parseFloat(newQuantity) || 0;
     const rate = productFormData.rate;
-    const amount = quantity * rate;
+    const amount = Number((quantity * rate).toFixed(2));
 
     setProductFormData(prev => ({
       ...prev,
@@ -315,7 +737,7 @@ function OrdersPageContent() {
   const handleRateChange = (newRate) => {
     const rate = parseFloat(newRate) || 0;
     const quantity = productFormData.quantity;
-    const amount = quantity * rate;
+    const amount = Number((quantity * rate).toFixed(2));
 
     setProductFormData(prev => ({
       ...prev,
@@ -344,45 +766,39 @@ function OrdersPageContent() {
       return;
     }
 
-    // Check if product already exists in table
-    const existingProductIndex = productTableData.findIndex(
-      item => item.pro_id === formSelectedProduct.pro_id && item.storeid === formSelectedStore.storeid
-    );
+    // Always add as a new line item (don't merge with existing products)
+    const newProduct = {
+      id: Date.now(), // Temporary ID for table row (unique for each addition)
+      pro_id: formSelectedProduct.pro_id,
+      pro_title: formSelectedProduct.pro_title,
+      storeid: formSelectedStore.storeid,
+      store_name: formSelectedStore.store_name,
+      quantity: productFormData.quantity,
+      rate: productFormData.rate,
+      amount: productFormData.amount,
+      stock: productFormData.stock
+    };
 
-    if (existingProductIndex >= 0) {
-      // Update existing product quantity and amount
-      const updatedData = [...productTableData];
-      updatedData[existingProductIndex].quantity += productFormData.quantity;
-      updatedData[existingProductIndex].amount = updatedData[existingProductIndex].quantity * updatedData[existingProductIndex].rate;
-      setProductTableData(updatedData);
-      showSnackbar('Product quantity updated', 'success');
-    } else {
-      // Add new product to table
-      const newProduct = {
-        id: Date.now(), // Temporary ID for table row
-        pro_id: formSelectedProduct.pro_id,
-        pro_title: formSelectedProduct.pro_title,
-        storeid: formSelectedStore.storeid,
-        store_name: formSelectedStore.store_name,
-        quantity: productFormData.quantity,
-        rate: productFormData.rate,
-        amount: productFormData.amount,
-        stock: productFormData.stock
-      };
-
-      setProductTableData(prev => [...prev, newProduct]);
-      showSnackbar('Product added to table', 'success');
-    }
+    setProductTableData(prev => [...prev, newProduct]);
+    showSnackbar('Product added to cart', 'success');
 
     // Reset form
     setFormSelectedProduct(null);
     // Don't reset store - it should remain selected
     setProductFormData({
-      quantity: 1,
-      rate: 0,
+      quantity: '',
+      rate: '',
       amount: 0,
       stock: 0
     });
+
+    // Auto-focus on Product field after adding product to allow adding more items
+    setTimeout(() => {
+      const productInput = document.querySelector('input[placeholder*="Select product"]');
+      if (productInput) {
+        productInput.focus();
+      }
+    }, 100);
   };
 
   // Handle removing product from table
@@ -391,9 +807,9 @@ function OrdersPageContent() {
     showSnackbar('Product removed from table', 'success');
   };
 
-  // Calculate total amount
   const calculateTotalAmount = () => {
-    return productTableData.reduce((total, product) => total + product.amount, 0);
+    const total = productTableData.reduce((total, product) => total + (parseFloat(product.amount) || 0), 0);
+    return Number(total.toFixed(2));
   };
 
   // Calculate subtotal (products + transport)
@@ -401,7 +817,7 @@ function OrdersPageContent() {
     const productTotal = calculateTotalAmount();
     const transportTotal = calculateTransportTotal();
     const subtotal = productTotal + transportTotal;
-    return subtotal;
+    return Number(subtotal.toFixed(2));
   };
 
   // Calculate grand total (products + labour + delivery (including transport) - discount)
@@ -412,14 +828,14 @@ function OrdersPageContent() {
     const transportTotal = calculateTransportTotal();
     const totalDelivery = deliveryCharges + transportTotal; // Transport added to delivery
     const discount = parseFloat(paymentData.discount) || 0;
-    return productTotal + labour + totalDelivery - discount;
+    return Number((productTotal + labour + totalDelivery - discount).toFixed(2));
   };
 
   // Calculate balance (grand total - total cash received)
   const calculateBalance = () => {
     const grandTotal = calculateGrandTotal();
     const totalCashReceived = parseFloat(paymentData.totalCashReceived) || 0;
-    return grandTotal - totalCashReceived;
+    return Number((grandTotal - totalCashReceived).toFixed(2));
   };
 
   // Handle payment data changes
@@ -518,9 +934,11 @@ function OrdersPageContent() {
         debit_account_id: paymentData.bankAccountId || null,
         credit_account_id: null,
         loader_id: null,
+        labour_charges: parseFloat(paymentData.labour) || 0, // Include labour charges
         shipping_amount: totalShippingAmount, // Include both transport and delivery charges
         bill_type: billType || 'BILL',
         reference: paymentData.notes || null,
+        is_loaded_order: paymentData.isLoadedOrder || false, // Flag for converted orders
         sale_details: productTableData.map(product => ({
           pro_id: product.pro_id,
           vehicle_no: null,
@@ -663,52 +1081,46 @@ function OrdersPageContent() {
     }));
   }, [paymentData.cash, paymentData.bank]);
 
-  // Transport functions
-  const fetchTransportAccounts = async () => {
-    try {
-      const response = await fetch('/api/customers');
-      if (response.ok) {
-        const accountsData = await response.json();
-        // Filter accounts where type is "Transport"
-        const transportAccountsData = accountsData.filter(account =>
-          account.customer_type &&
-          account.customer_type.cus_type_title &&
-          account.customer_type.cus_type_title.toLowerCase().includes('transport')
-        );
-        setTransportAccounts(transportAccountsData);
-      } else {
-        console.error('❌ Customer accounts API error:', response.status);
-        setTransportAccounts([]);
-      }
-    } catch (error) {
-      console.error('❌ Error fetching customer accounts:', error);
-      setTransportAccounts([]);
-    }
+  // Filter customers by category and type for bank accounts
+  const filterBankAccountsByCategory = (customers, customerCategories, customerTypes) => {
+    console.log('🔍 Filtering bank accounts for orders:');
+    console.log('  - Available customers:', customers.length);
+    console.log('  - Available categories:', customerCategories.length);
+    console.log('  - Available types:', customerTypes.length);
+
+    // Bank accounts: BOTH category AND type must contain "bank"
+    const filteredBankAccounts = customers.filter(customer => {
+      const categoryInfo = customerCategories.find(cat => cat.cus_cat_id === customer.cus_category);
+      const typeInfo = customerTypes.find(t => t.cus_type_id === customer.cus_type);
+      const hasBank = categoryInfo && categoryInfo.cus_cat_title.toLowerCase().includes('bank');
+      const hasBank2 = typeInfo && typeInfo.cus_type_title.toLowerCase().includes('bank');
+      return hasBank && hasBank2;
+    });
+
+    console.log(`✅ Filtered ${filteredBankAccounts.length} bank accounts (BOTH category AND type contain 'bank')`);
+    return filteredBankAccounts;
   };
 
   // Bank accounts functions
-  const fetchBankAccounts = async () => {
+  const fetchBankAccounts = async (providedCustomers = null) => {
     try {
-      const response = await fetch('/api/customers');
-      if (response.ok) {
-        const accountsData = await response.json();
-        // Filter accounts where type is "Bank Account"
-        const bankAccountsData = accountsData.filter(account => {
-          const isBankAccount = account.customer_type &&
-            account.customer_type.cus_type_title &&
-            account.customer_type.cus_type_title.toLowerCase().includes('bank account');
+      let accountsData = providedCustomers;
 
-          if (isBankAccount) {
-            console.log('🏦 Found bank account:', account.cus_name, account.customer_type.cus_type_title);
-          }
+      if (!accountsData) {
+        const response = await fetch('/api/customers');
+        if (response.ok) {
+          const customersResponse = await response.json();
+          accountsData = customersResponse.value || customersResponse;
+        }
+      }
 
-          return isBankAccount;
-        });
-
+      if (Array.isArray(accountsData) && customerCategories.length > 0 && customerTypes.length > 0) {
+        // Filter bank accounts using category + type validation
+        const bankAccountsData = filterBankAccountsByCategory(accountsData, customerCategories, customerTypes);
         console.log('🏦 Bank accounts found:', bankAccountsData.length);
         setBankAccounts(bankAccountsData);
       } else {
-        console.error('❌ Bank accounts API error:', response.status);
+        console.warn('⚠️ Cannot filter bank accounts - missing data');
         setBankAccounts([]);
       }
     } catch (error) {
@@ -716,6 +1128,70 @@ function OrdersPageContent() {
       setBankAccounts([]);
     }
   };
+
+  // Transport functions
+  const fetchTransportAccounts = async (providedCustomers = null) => {
+    try {
+      let accountsData = providedCustomers;
+
+      if (!accountsData) {
+        const response = await fetch('/api/customers');
+        if (response.ok) {
+          const customersResponse = await response.json();
+          accountsData = customersResponse.value || customersResponse;
+        }
+      }
+
+      if (Array.isArray(accountsData)) {
+        // Create a category lookup map for faster filtering
+        const categoryMap = new Map();
+        customerCategories.forEach(cat => {
+          categoryMap.set(cat.cus_cat_id, cat.cus_cat_title.toLowerCase());
+        });
+
+        // Filter accounts where category is "Transporter" - optimized
+        const transportAccountsData = accountsData.filter(account => {
+          const catTitle = categoryMap.get(account.cus_category);
+          if (catTitle) {
+            return catTitle.includes('transporter') || catTitle.includes('transport');
+          }
+
+          // Fallback to type or name if category not found
+          const typeTitle = (account.customer_type?.cus_type_title || '').toLowerCase();
+          const name = (account.cus_name || '').toLowerCase();
+          return typeTitle.includes('transport') || name.includes('transport');
+        });
+
+        // Batch state updates to avoid multiple re-renders
+        setTransportAccounts(transportAccountsData);
+
+        // Update the current screen with the new transport accounts (synchronous)
+        if (currentScreenIndex >= 0 && screenStack[currentScreenIndex]) {
+          const updatedState = {
+            ...screenStack[currentScreenIndex],
+            transportAccounts: transportAccountsData.map(t => ({ ...t })),
+            transportOptions: transportOptions.map(t => ({ ...t })),
+            timestamp: new Date().toLocaleTimeString()
+          };
+          const newStack = [...screenStack];
+          newStack[currentScreenIndex] = updatedState;
+          setScreenStack(newStack);
+        }
+      } else {
+        setTransportAccounts([]);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching transport accounts:', error);
+      setTransportAccounts([]);
+    }
+  };
+
+  // Update transport accounts when customers or categories change
+  useEffect(() => {
+    if (customers.length > 0 && customerCategories.length > 0 && !isRestoringScreen) {
+      fetchTransportAccounts(customers);
+    }
+  }, [customers, customerCategories, isRestoringScreen]);
 
   const handleAddTransport = () => {
     if (newTransport.amount <= 0) {
@@ -757,9 +1233,7 @@ function OrdersPageContent() {
   };
 
   // Customer creation functions
-  const handleOpenCustomerPopup = () => {
-    setCustomerPopupOpen(true);
-  };
+  // (opening the customer popup is handled by the single `handleOpenCustomerPopup(preferredType)` defined near the top)
 
   const handleCloseCustomerPopup = () => {
     setCustomerPopupOpen(false);
@@ -769,6 +1243,7 @@ function OrdersPageContent() {
       cus_phone_no2: '',
       cus_reference: '',
       cus_account_info: '',
+      cus_address: '',
       other: '',
       cus_category: '',
       cus_type: '',
@@ -798,7 +1273,7 @@ function OrdersPageContent() {
       return;
     }
     if (!newCustomer.cus_category) {
-      showSnackbar('Customer category is required', 'error');
+      showSnackbar('Account category is required', 'error');
       return;
     }
     if (!newCustomer.cus_type) {
@@ -806,15 +1281,7 @@ function OrdersPageContent() {
       return;
     }
 
-    // Check if customer with same phone number already exists
-    const existingCustomer = customers.find(customer =>
-      customer.cus_phone_no === newCustomer.cus_phone_no.trim()
-    );
-
-    if (existingCustomer) {
-      showSnackbar(`A customer with phone number ${newCustomer.cus_phone_no} already exists. Please use a different phone number.`, 'error');
-      return;
-    }
+    // Allow duplicate phone numbers — do not block creation by phone number.
 
     try {
       const customerData = {
@@ -823,6 +1290,7 @@ function OrdersPageContent() {
         cus_phone_no2: newCustomer.cus_phone_no2.trim(),
         cus_reference: newCustomer.cus_reference.trim(),
         cus_account_info: newCustomer.cus_account_info.trim(),
+        cus_address: newCustomer.cus_address.trim(),
         other: newCustomer.other.trim(),
         cus_category: newCustomer.cus_category,
         cus_type: newCustomer.cus_type,
@@ -922,8 +1390,7 @@ function OrdersPageContent() {
       // Fetch transport accounts after main data
       await fetchTransportAccounts();
 
-      // Fetch bank accounts after main data
-      await fetchBankAccounts();
+      // Note: fetchBankAccounts will be called via auto-filter effect once customers, categories, and types are loaded
 
       console.log('📡 All API calls completed');
 
@@ -941,7 +1408,8 @@ function OrdersPageContent() {
         if (customersData.length > 0) {
           console.log('🔍 First customer:', customersData[0]);
         }
-        setCustomers(customersData);
+        const customersArray = Array.isArray(customersData) ? customersData : [];
+        setCustomers(customersArray);
         console.log('🔍 Customers state set successfully');
       } else {
         console.error('❌ Customers API error:', customersRes.status, customersRes.statusText);
@@ -1200,6 +1668,92 @@ function OrdersPageContent() {
     } catch (error) {
       console.error('Error processing sale return:', error);
       showSnackbar('Error processing sale return', 'error');
+    }
+  };
+
+  // Handle adding customer category
+  const handleAddCustomerCategory = async (e) => {
+    e?.preventDefault();
+    setIsAddingCustomerCategory(true);
+    try {
+      const response = await fetch('/api/customer-category', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(customerCategoryFormData)
+      });
+
+      if (response.ok) {
+        const newCategory = await response.json();
+        setCustomerCategories(prev => [...prev, newCategory]);
+        setShowCustomerCategoryPopup(false);
+        setCustomerCategoryFormData({ cus_cat_title: '' });
+        showSnackbar('Account category added successfully!', 'success');
+      } else {
+        showSnackbar('Failed to add account category', 'error');
+      }
+    } catch (error) {
+      console.error('Error adding account category:', error);
+      showSnackbar('Error adding account category', 'error');
+    } finally {
+      setIsAddingCustomerCategory(false);
+    }
+  };
+
+  // Handle adding customer type
+  const handleAddCustomerType = async (e) => {
+    e?.preventDefault();
+    setIsAddingCustomerType(true);
+    try {
+      const response = await fetch('/api/customer-types', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(customerTypeFormData)
+      });
+
+      if (response.ok) {
+        const newCustomerType = await response.json();
+        setCustomerTypes(prev => [...prev, newCustomerType]);
+        setShowCustomerTypePopup(false);
+        setCustomerTypeFormData({ cus_type_title: '' });
+        showSnackbar('Account type added successfully!', 'success');
+      } else {
+        const error = await response.json();
+        showSnackbar(error.error || 'Failed to create account type', 'error');
+      }
+    } catch (error) {
+      console.error('Error creating account type:', error);
+      showSnackbar('Error creating account type', 'error');
+    } finally {
+      setIsAddingCustomerType(false);
+    }
+  };
+
+  // Handle adding city
+  const handleAddCity = async (e) => {
+    e?.preventDefault();
+    setIsAddingCity(true);
+    try {
+      const response = await fetch('/api/cities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cityFormData)
+      });
+
+      if (response.ok) {
+        const newCity = await response.json();
+        setCities(prev => [...prev, newCity]);
+        setShowCityPopup(false);
+        setCityFormData({ city_name: '' });
+        showSnackbar('City added successfully!', 'success');
+      } else {
+        const error = await response.json();
+        showSnackbar(error.error || 'Failed to create city', 'error');
+      }
+    } catch (error) {
+      console.error('Error creating city:', error);
+      showSnackbar('Error creating city', 'error');
+    } finally {
+      setIsAddingCity(false);
     }
   };
 
@@ -1616,6 +2170,19 @@ function OrdersPageContent() {
     }
   };
 
+  // Helper function to get sort label
+  const getSortLabel = (value) => {
+    const labels = {
+      'created_at-desc': 'Newest First',
+      'created_at-asc': 'Oldest First',
+      'customer-asc': 'Customer A-Z',
+      'customer-desc': 'Customer Z-A',
+      'total_amount-desc': 'Amount High-Low',
+      'total_amount-asc': 'Amount Low-High'
+    };
+    return labels[value] || 'Newest First';
+  };
+
   const clearFilters = () => {
     setSearchTerm('');
     setSelectedCustomer(null);
@@ -1644,7 +2211,20 @@ function OrdersPageContent() {
   // Render Sales Create View
   const renderSalesCreateView = () => (
     <DashboardLayout>
-      <Container maxWidth="xl" sx={{ py: 1 }}>
+      <Container
+        maxWidth={false}
+        sx={{
+          py: 1,
+          maxWidth: {
+            xs: '100%',           // Mobile: full width
+            sm: '100%',           // Small screens: full width  
+            md: '100%',           // Medium screens: full width
+            lg: '1200px',         // Large screens: reasonable max width
+            xl: '1400px'          // Extra large screens: slightly larger max width
+          },
+          mx: 'auto',             // Center the content
+          px: { xs: 2, sm: 3, md: 4 } // Responsive horizontal padding
+        }}>
         <Stack spacing={2}>
           {/* Header */}
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
@@ -1691,12 +2271,154 @@ function OrdersPageContent() {
             </Button>
           </Box>
 
+          {/* Screen Navigation */}
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 'medium' }}>
+                Screen {currentScreenIndex + 1} of {screenStack.length}
+              </Typography>
+              {showScreenIndicator && (
+                <Chip
+                  label={`Screen ${currentScreenIndex + 1}`}
+                  size="small"
+                  color="primary"
+                  variant="outlined"
+                  sx={{
+                    animation: 'pulse 1s ease-in-out',
+                    '@keyframes pulse': {
+                      '0%': { opacity: 1 },
+                      '50%': { opacity: 0.5 },
+                      '100%': { opacity: 1 }
+                    }
+                  }}
+                />
+              )}
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Tooltip title="Previous Screen (Ctrl+Left)">
+                <IconButton
+                  onClick={goToPreviousScreen}
+                  disabled={currentScreenIndex <= 0}
+                  size="small"
+                  sx={{
+                    color: currentScreenIndex <= 0 ? 'text.disabled' : 'primary.main',
+                    '&:hover': {
+                      bgcolor: 'primary.light',
+                      color: 'white'
+                    }
+                  }}
+                >
+                  <ArrowBackIcon />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Next Screen / New Screen (Ctrl+Right)">
+                <IconButton
+                  onClick={handleForwardNavigation}
+                  size="small"
+                  sx={{
+                    color: 'primary.main',
+                    '&:hover': {
+                      bgcolor: 'primary.light',
+                      color: 'white'
+                    }
+                  }}
+                >
+                  <ArrowForwardIcon />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Cancel Current Screen (Ctrl+X)">
+                <IconButton
+                  onClick={cancelCurrentScreen}
+                  size="small"
+                  sx={{
+                    color: 'error.main',
+                    '&:hover': {
+                      bgcolor: 'error.light',
+                      color: 'white'
+                    }
+                  }}
+                >
+                  <CancelIcon />
+                </IconButton>
+              </Tooltip>
+            </Box>
+          </Box>
+
 
           {/* Main Form */}
           <Card>
             <CardContent sx={{ p: 2 }}>
               {/* First Row - Date, Customer, Reference */}
               <Grid container spacing={2} sx={{ mb: 2 }}>
+                <Grid item xs={12} md={3}>
+                  <Box sx={{ position: 'relative' }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 'medium', color: 'text.secondary' }}>
+                        CUSTOMER
+                      </Typography>
+                      {formSelectedCustomer && (
+                        <Typography variant="body2" sx={{
+                          fontWeight: 'bold',
+                          color: 'white',
+                          fontSize: '0.875rem',
+                          bgcolor: 'primary.light',
+                          px: 1,
+                          py: 0.5,
+                          borderRadius: 1
+                        }}>
+                          Balance: {formSelectedCustomer.cus_balance ? parseFloat(formSelectedCustomer.cus_balance).toFixed(2) : '0.00'}
+                        </Typography>
+                      )}
+                    </Box>
+                    <Autocomplete
+                      size="small"
+                      options={customers.filter(customer => {
+                        // Filter for customers with category "Customer"
+                        const category = customerCategories.find(c => c.cus_cat_id === customer.cus_category);
+                        return category && category.cus_cat_title.toLowerCase().includes('customer');
+                      })}
+                      getOptionLabel={(option) => {
+                        console.log('🔍 getOptionLabel called with:', option);
+                        return option.cus_name || '';
+                      }}
+                      value={formSelectedCustomer}
+                      onChange={(event, newValue) => {
+                        console.log('🔍 Customer selected:', newValue);
+                        setFormSelectedCustomer(newValue);
+                      }}
+                      isOptionEqualToValue={(option, value) => option.cus_id === value?.cus_id}
+                      autoSelect={true}
+                      autoHighlight={true}
+                      openOnFocus={true}
+                      selectOnFocus={true}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && formSelectedCustomer) {
+                          e.preventDefault();
+                          // Move focus to Product field
+                          const productInputs = document.querySelectorAll('input[placeholder*="Select product"]');
+                          if (productInputs.length > 0) {
+                            productInputs[0]?.focus();
+                          }
+                        }
+                      }}
+                      renderInput={(params) => {
+                        console.log('🔍 renderInput called, customers length:', customers.length);
+                        return (
+                          <TextField
+                            {...params}
+                            placeholder="Select customer"
+                            onFocus={(e) => e.target.select()}
+                            sx={{ bgcolor: 'white', minWidth: 250, '& .MuiInputBase-input': { fontWeight: formSelectedCustomer ? 'bold' : 'normal' } }}
+                          />
+                        );
+                      }}
+                    />
+                    {/* Debug info */}
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                      Debug: {customers.length} total customers, {customers.filter(c => c.customer_category?.cus_cat_title?.toLowerCase().includes('customer')).length} customers (filtered)
+                    </Typography>
+                  </Box>
+                </Grid>
                 <Grid item xs={12} md={2}>
                   <Box>
                     <Typography variant="body2" sx={{ mb: 1, fontWeight: 'medium', color: 'text.secondary' }}>
@@ -1730,62 +2452,6 @@ function OrdersPageContent() {
                     />
                   </Box>
                 </Grid>
-                <Grid item xs={12} md={3}>
-                  <Box sx={{ position: 'relative' }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                      <Typography variant="body2" sx={{ fontWeight: 'medium', color: 'text.secondary' }}>
-                        CUSTOMER
-                      </Typography>
-                      {formSelectedCustomer && (
-                        <Typography variant="body2" sx={{
-                          fontWeight: 'bold',
-                          color: 'white',
-                          fontSize: '0.875rem',
-                          bgcolor: 'primary.light',
-                          px: 1,
-                          py: 0.5,
-                          borderRadius: 1
-                        }}>
-                          Balance: {formSelectedCustomer.cus_balance ? parseFloat(formSelectedCustomer.cus_balance).toFixed(2) : '0.00'}
-                        </Typography>
-                      )}
-                    </Box>
-                    <Autocomplete
-                      size="small"
-                      options={customers.filter(customer => {
-                        // Filter for customers with category "Customer"
-                        const isCustomer = customer.customer_category &&
-                          customer.customer_category.cus_cat_title &&
-                          customer.customer_category.cus_cat_title.toLowerCase().includes('customer');
-                        return isCustomer;
-                      })}
-                      getOptionLabel={(option) => {
-                        console.log('🔍 getOptionLabel called with:', option);
-                        return option.cus_name || '';
-                      }}
-                      value={formSelectedCustomer}
-                      onChange={(event, newValue) => {
-                        console.log('🔍 Customer selected:', newValue);
-                        setFormSelectedCustomer(newValue);
-                      }}
-                      isOptionEqualToValue={(option, value) => option.cus_id === value?.cus_id}
-                      renderInput={(params) => {
-                        console.log('🔍 renderInput called, customers length:', customers.length);
-                        return (
-                          <TextField
-                            {...params}
-                            placeholder="Select customer"
-                            sx={{ bgcolor: 'white', minWidth: 250, '& .MuiInputBase-input': { fontWeight: formSelectedCustomer ? 'bold' : 'normal' } }}
-                          />
-                        );
-                      }}
-                    />
-                    {/* Debug info */}
-                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                      Debug: {customers.length} total customers, {customers.filter(c => c.customer_category?.cus_cat_title?.toLowerCase().includes('customer')).length} customers (filtered)
-                    </Typography>
-                  </Box>
-                </Grid>
                 <Grid item xs={12} md={1.5}>
                   <Box>
                     <Typography variant="body2" sx={{ mb: 1, fontWeight: 'medium', color: 'text.secondary' }}>
@@ -1812,16 +2478,59 @@ function OrdersPageContent() {
                       size="small"
                       options={products || []}
                       getOptionLabel={(option) => option.pro_title || ''}
+                      renderOption={(props, option) => (
+                        <li {...props} key={option.pro_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Typography sx={{ fontWeight: 500 }}>{option.pro_title}</Typography>
+                            {option.pro_code && (
+                              <Typography variant="caption" sx={{ color: 'text.secondary', ml: 0.5 }}>#{option.pro_code}</Typography>
+                            )}
+                          </Box>
+
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            {visibleCrates.includes(option.pro_id) && (
+                              <Typography variant="body2" sx={{ color: 'text.secondary', mr: 1 }}>
+                                {option.pro_crate ? 'PKR ' + parseFloat(option.pro_crate).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : 'N/A'}
+                              </Typography>
+                            )}
+
+                            <IconButton
+                              size="small"
+                              tabIndex={-1}
+                              onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                              onClick={(e) => { e.stopPropagation(); e.preventDefault(); toggleVisibleCrate(option.pro_id); }}
+                              aria-label={visibleCrates.includes(option.pro_id) ? 'Hide purchase rate' : 'Show purchase rate'}
+                            >
+                              <VisibilityIcon fontSize="small" />
+                            </IconButton>
+                          </Box>
+                        </li>
+                      )}
                       value={formSelectedProduct}
                       onChange={(event, newValue) => {
                         console.log('🔍 Product selected:', newValue);
                         handleProductSelect(newValue);
                       }}
                       isOptionEqualToValue={(option, value) => option.pro_id === value?.pro_id}
+                      autoSelect={true}
+                      autoHighlight={true}
+                      openOnFocus={true}
+                      selectOnFocus={true}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && formSelectedProduct) {
+                          e.preventDefault();
+                          // Move focus to Store field
+                          const storeInputs = document.querySelectorAll('input[placeholder*="Select Store"]');
+                          if (storeInputs.length > 0) {
+                            storeInputs[0].focus();
+                          }
+                        }
+                      }}
                       renderInput={(params) => (
                         <TextField
                           {...params}
                           placeholder={products.length === 0 ? "No products available" : "Select product"}
+                          onFocus={(e) => e.target.select()}
                           sx={{ bgcolor: 'white', width: 350, minWidth: 350, '& .MuiInputBase-input': { fontWeight: formSelectedProduct ? 'bold' : 'normal' } }}
                         />
                       )}
@@ -1838,27 +2547,38 @@ function OrdersPageContent() {
                     <Typography variant="body2" sx={{ mb: 1, fontWeight: 'medium', color: 'text.secondary' }}>
                       SELECT STORE
                     </Typography>
-                    <FormControl fullWidth size="small">
-                      <Select
-                        value={formSelectedStore?.storeid || ''}
-                        onChange={(event) => {
-                          const selectedStoreId = event.target.value;
-                          const selectedStore = stores.find(store => store.storeid == selectedStoreId);
-                          setFormSelectedStore(selectedStore || null);
-                        }}
-                        sx={{ bgcolor: 'white', '& .MuiSelect-select': { fontWeight: formSelectedStore ? 'bold' : 'normal' } }}
-                        displayEmpty
-                      >
-                        <MenuItem value="">Select Store</MenuItem>
-                        {Array.isArray(stores) && stores.length > 0 ? stores.map((store) => (
-                          <MenuItem key={store.storeid} value={store.storeid}>
-                            {store.store_name}
-                          </MenuItem>
-                        )) : (
-                          <MenuItem disabled>No stores available</MenuItem>
-                        )}
-                      </Select>
-                    </FormControl>
+                    <Autocomplete
+                      size="small"
+                      options={stores || []}
+                      getOptionLabel={(option) => option.store_name || ''}
+                      value={formSelectedStore}
+                      onChange={(event, newValue) => {
+                        setFormSelectedStore(newValue || null);
+                      }}
+                      isOptionEqualToValue={(option, value) => option.storeid === value?.storeid}
+                      autoSelect={true}
+                      autoHighlight={true}
+                      openOnFocus={true}
+                      selectOnFocus={true}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && formSelectedStore) {
+                          e.preventDefault();
+                          // Move focus to Quantity field
+                          const qtyInputs = document.querySelectorAll('input[placeholder*="QTY"], input[type="number"]');
+                          if (qtyInputs.length > 0) {
+                            qtyInputs[0]?.focus();
+                          }
+                        }
+                      }}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          placeholder="Select Store"
+                          onFocus={(e) => e.target.select()}
+                          sx={{ bgcolor: 'white', '& .MuiInputBase-input': { fontWeight: formSelectedStore ? 'bold' : 'normal' } }}
+                        />
+                      )}
+                    />
                   </Box>
                 </Grid>
                 <Grid item xs={12} md={1.5}>
@@ -1870,8 +2590,10 @@ function OrdersPageContent() {
                       fullWidth
                       size="small"
                       type="number"
-                      value={productFormData.quantity}
+                      value={productFormData.quantity === 0 ? '' : productFormData.quantity}
                       onChange={(e) => handleQuantityChange(e.target.value)}
+                      onFocus={(e) => e.target.select()}
+                      inputProps={{ step: 'any' }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
@@ -1880,17 +2602,17 @@ function OrdersPageContent() {
                             handleAddProductToTable();
                           } else {
                             // Focus on rate field if rate is not filled
-                            setTimeout(() => {
-                              const rateInputs = document.querySelectorAll('input[type="number"]');
-                              // Find the rate input (it's the next number input after quantity)
-                              if (rateInputs.length > 1) {
-                                rateInputs[1].focus();
-                              }
-                            }, 0);
+                            const rateInput = document.getElementById('product-rate-input');
+                            if (rateInput) rateInput.focus();
                           }
+                        } else if (e.key === 'Tab') {
+                          e.preventDefault();
+                          // Tab should move to RATE field
+                          const rateInput = document.getElementById('product-rate-input');
+                          if (rateInput) rateInput.focus();
                         }
                       }}
-                      sx={{ bgcolor: 'white', width: 100, minWidth: 100 }}
+                      sx={{ bgcolor: 'white', width: 160, minWidth: 160 }}
                     />
                   </Box>
                 </Grid>
@@ -1903,13 +2625,21 @@ function OrdersPageContent() {
                       fullWidth
                       size="small"
                       type="number"
-                      value={productFormData.rate}
+                      value={productFormData.rate === 0 ? '' : productFormData.rate}
                       onChange={(e) => handleRateChange(e.target.value)}
+                      onFocus={(e) => e.target.select()}
+                      inputProps={{ step: 'any' }}
+                      id="product-rate-input"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
                           // Add product to table when Enter is pressed in rate field
                           handleAddProductToTable();
+                        } else if (e.key === 'Tab') {
+                          e.preventDefault();
+                          // Focus + button
+                          const addBtn = document.getElementById('add-product-btn');
+                          if (addBtn) addBtn.focus();
                         }
                       }}
                       sx={{ bgcolor: 'white', width: 150, minWidth: 150 }}
@@ -1949,6 +2679,7 @@ function OrdersPageContent() {
                   <Box sx={{ mt: 2 }}>
                     <Button
                       variant="contained"
+                      id="add-product-btn"
                       onClick={handleAddProductToTable}
                       sx={{
                         bgcolor: '#6f42c1',
@@ -2006,7 +2737,7 @@ function OrdersPageContent() {
                                       ? {
                                         ...p,
                                         quantity: newQuantity,
-                                        amount: newQuantity * p.rate
+                                        amount: Number((newQuantity * p.rate).toFixed(2))
                                       }
                                       : p
                                   );
@@ -2022,7 +2753,7 @@ function OrdersPageContent() {
                               }}
                               inputProps={{
                                 min: 0.01,
-                                step: 0.01
+                                step: 'any'
                               }}
                             />
                           </TableCell>
@@ -2039,7 +2770,7 @@ function OrdersPageContent() {
                                       ? {
                                         ...p,
                                         rate: newRate,
-                                        amount: p.quantity * newRate
+                                        amount: Number((p.quantity * newRate).toFixed(2))
                                       }
                                       : p
                                   );
@@ -2055,7 +2786,7 @@ function OrdersPageContent() {
                               }}
                               inputProps={{
                                 min: 0,
-                                step: 0.01
+                                step: 'any'
                               }}
                             />
                           </TableCell>
@@ -2087,85 +2818,6 @@ function OrdersPageContent() {
                 </Table>
               </TableContainer>
 
-              {/* Transport Section */}
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold', color: 'text.primary' }}>
-                  Transport Options
-                </Typography>
-
-                {/* Transport Input Fields */}
-                <Grid container spacing={2} sx={{ mb: 2 }}>
-                  <Grid item xs={12} md={6}>
-                    <FormControl fullWidth size="small">
-                      <InputLabel>Transport Account</InputLabel>
-                      <Select
-                        value={newTransport.accountId}
-                        onChange={(e) => setNewTransport(prev => ({ ...prev, accountId: e.target.value }))}
-                        label="Transport Account"
-                        sx={{ minWidth: 300 }}
-                      >
-                        <MenuItem value="">Select Transport Account</MenuItem>
-                        {transportAccounts.map((account) => (
-                          <MenuItem key={account.cus_id} value={account.cus_id}>
-                            {account.cus_name}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  </Grid>
-                  <Grid item xs={12} md={4}>
-                    <TextField
-                      fullWidth
-                      label="Amount"
-                      type="number"
-                      value={newTransport.amount}
-                      onChange={(e) => setNewTransport(prev => ({ ...prev, amount: parseFloat(e.target.value) || 0 }))}
-                      placeholder="0.00"
-                      size="small"
-                    />
-                  </Grid>
-                  <Grid item xs={12} md={2}>
-                    <Box sx={{ mt: 1 }}>
-                      <Button
-                        variant="contained"
-                        onClick={handleAddTransport}
-                        sx={{
-                          bgcolor: '#6f42c1',
-                          color: 'white',
-                          minWidth: 40,
-                          '&:hover': { bgcolor: '#5a2d91' }
-                        }}
-                      >
-                        +
-                      </Button>
-                    </Box>
-                  </Grid>
-                </Grid>
-
-                {/* Transport Options Display */}
-                {transportOptions.length > 0 && (
-                  <Box sx={{ mt: 2 }}>
-                    <Typography variant="body2" sx={{ mb: 1, fontWeight: 'medium' }}>
-                      Transport Options ({transportOptions.length}):
-                    </Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                      {transportOptions.map((transport) => (
-                        <Chip
-                          key={transport.id}
-                          label={`${transport.accountName}: ${transport.amount.toFixed(2)}`}
-                          onDelete={() => handleRemoveTransport(transport.id)}
-                          color="primary"
-                          variant="outlined"
-                        />
-                      ))}
-                    </Box>
-                    <Typography variant="body2" sx={{ mt: 1, fontWeight: 'bold' }}>
-                      Transport Total: {calculateTransportTotal().toFixed(2)}
-                    </Typography>
-                  </Box>
-                )}
-              </Box>
-
               {/* Payment Details */}
               <Box sx={{ mt: 2, p: 2, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
                 {/* Left Section - Payment Fields */}
@@ -2190,10 +2842,12 @@ function OrdersPageContent() {
                           fullWidth
                           size="small"
                           type="number"
-                          value={paymentData.cash}
+                          value={paymentData.cash === 0 ? '' : paymentData.cash}
                           onChange={(e) => handlePaymentDataChange('cash', e.target.value)}
+                          onFocus={(e) => e.target.select()}
+                          inputProps={{ step: 'any' }}
                           sx={{ bgcolor: 'white', '& .MuiInputBase-input': { padding: '8px' } }}
-                          placeholder="0"
+                          placeholder=" "
                         />
                       </Box>
                     </Grid>
@@ -2206,10 +2860,36 @@ function OrdersPageContent() {
                           fullWidth
                           size="small"
                           type="number"
-                          value={paymentData.bank}
+                          value={paymentData.bank === 0 ? '' : paymentData.bank}
                           onChange={(e) => handlePaymentDataChange('bank', e.target.value)}
+                          onFocus={(e) => e.target.select()}
+                          inputProps={{ step: 'any' }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Tab') {
+                              // Only intercept Tab and move focus to BANK ACCOUNT when a bank amount is present
+                              if (parseFloat(paymentData.bank || 0) > 0) {
+                                e.preventDefault();
+                                setTimeout(() => {
+                                  const bankAccInputs = document.querySelectorAll('input[placeholder="Select Bank Account"]');
+                                  if (bankAccInputs.length > 0) {
+                                    bankAccInputs[0].focus();
+                                  } else {
+                                    // Fallback: search for input that might be the bank account select
+                                    const allInputs = document.querySelectorAll('input[type="text"]');
+                                    for (let i = 0; i < allInputs.length; i++) {
+                                      const input = allInputs[i];
+                                      if (input.placeholder && input.placeholder.toLowerCase().includes('bank')) {
+                                        input.focus();
+                                        return;
+                                      }
+                                    }
+                                  }
+                                }, 0);
+                              }
+                            }
+                          }}
                           sx={{ bgcolor: 'white', '& .MuiInputBase-input': { padding: '8px' } }}
-                          placeholder="0"
+                          placeholder=" "
                         />
                       </Box>
                     </Grid>
@@ -2218,20 +2898,29 @@ function OrdersPageContent() {
                         <Typography variant="body2" sx={{ mb: 1, fontWeight: 'medium', color: 'text.secondary' }}>
                           BANK ACCOUNT
                         </Typography>
-                        <FormControl fullWidth size="small">
-                          <Select
-                            value={paymentData.bankAccountId}
-                            onChange={(e) => handlePaymentDataChange('bankAccountId', e.target.value)}
-                            sx={{ bgcolor: 'white', '& .MuiSelect-select': { padding: '8px' } }}
-                          >
-                            <MenuItem value="">Select Bank</MenuItem>
-                            {bankAccounts.map((account) => (
-                              <MenuItem key={account.cus_id} value={account.cus_id}>
-                                {account.cus_name}
-                              </MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
+                        <Autocomplete
+                          size="small"
+                          options={bankAccounts}
+                          getOptionLabel={(option) => option.cus_name || ''}
+                          value={bankAccounts.find(acc => acc.cus_id === paymentData.bankAccountId) || null}
+                          onChange={(event, newValue) => {
+                            handlePaymentDataChange('bankAccountId', newValue ? newValue.cus_id : '');
+                          }}
+
+                          isOptionEqualToValue={(option, value) => option.cus_id === value?.cus_id}
+                          autoSelect={true}
+                          autoHighlight={true}
+                          openOnFocus={true}
+                          selectOnFocus={true}
+                          renderInput={(params) => (
+                            <TextField
+                              {...params}
+                              placeholder="Select Bank Account"
+                              onFocus={(e) => e.target.select()}
+                              sx={{ bgcolor: 'white', '& .MuiInputBase-input': { padding: '8px' } }}
+                            />
+                          )}
+                        />
                       </Box>
                     </Grid>
                     <Grid item xs={3}>
@@ -2243,7 +2932,7 @@ function OrdersPageContent() {
                           fullWidth
                           size="small"
                           type="number"
-                          value={paymentData.totalCashReceived}
+                          value={Number(paymentData.totalCashReceived).toFixed(2)}
                           sx={{ bgcolor: '#f5f5f5', '& .MuiInputBase-input': { padding: '8px' } }}
                           disabled
                         />
@@ -2305,10 +2994,12 @@ function OrdersPageContent() {
                     <TextField
                       size="small"
                       type="number"
-                      value={paymentData.labour}
+                      value={paymentData.labour === 0 ? '' : paymentData.labour}
                       onChange={(e) => handlePaymentDataChange('labour', e.target.value)}
+                      onFocus={(e) => e.target.select()}
+                      inputProps={{ min: 0, step: 'any' }}
                       sx={{ bgcolor: 'white', '& .MuiInputBase-input': { padding: '8px' }, flex: 1 }}
-                      placeholder="0"
+                      placeholder=" "
                     />
                   </Box>
 
@@ -2320,20 +3011,16 @@ function OrdersPageContent() {
                     <TextField
                       size="small"
                       type="number"
-                      value={(parseFloat(paymentData.deliveryCharges || 0) + calculateTransportTotal()).toFixed(2)}
-                      onChange={(e) => {
-                        // Calculate delivery charges by subtracting transport from total
-                        const totalValue = parseFloat(e.target.value) || 0;
-                        const transportTotal = calculateTransportTotal();
-                        const deliveryOnly = totalValue - transportTotal;
-                        handlePaymentDataChange('deliveryCharges', deliveryOnly >= 0 ? deliveryOnly : 0);
-                      }}
+                      value={paymentData.deliveryCharges === 0 ? '' : paymentData.deliveryCharges}
+                      onChange={(e) => handlePaymentDataChange('deliveryCharges', e.target.value)}
+                      onFocus={(e) => e.target.select()}
+                      inputProps={{ min: 0, step: 'any' }}
                       sx={{ bgcolor: 'white', '& .MuiInputBase-input': { padding: '8px', fontWeight: 'bold' }, flex: 1 }}
-                      placeholder="0"
+                      placeholder=" "
                     />
                     {calculateTransportTotal() > 0 && (
                       <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
-                        (includes Transport: {calculateTransportTotal().toFixed(2)})
+                        (+ Transport: {calculateTransportTotal().toFixed(2)})
                       </Typography>
                     )}
                   </Box>
@@ -2346,10 +3033,12 @@ function OrdersPageContent() {
                     <TextField
                       size="small"
                       type="number"
-                      value={paymentData.discount}
+                      value={paymentData.discount === 0 ? '' : paymentData.discount}
                       onChange={(e) => handlePaymentDataChange('discount', e.target.value)}
+                      onFocus={(e) => e.target.select()}
+                      inputProps={{ min: 0, step: 'any' }}
                       sx={{ bgcolor: 'white', '& .MuiInputBase-input': { padding: '8px' }, flex: 1 }}
-                      placeholder="0"
+                      placeholder=" "
                     />
                   </Box>
 
@@ -2478,6 +3167,19 @@ function OrdersPageContent() {
                 <Button
                   variant="contained"
                   sx={{
+                    bgcolor: '#6c757d',
+                    color: 'white',
+                    borderRadius: 2,
+                    '&:hover': { bgcolor: '#5a6268' }
+                  }}
+                  onClick={cancelCurrentScreen}
+                  disabled={screenStack.length <= 1}
+                >
+                  Cancel Current Screen
+                </Button>
+                <Button
+                  variant="contained"
+                  sx={{
                     bgcolor: '#28a745',
                     color: 'white',
                     borderRadius: 2,
@@ -2543,29 +3245,29 @@ function OrdersPageContent() {
               <Box sx={{ px: 3, py: 2, borderBottom: '1px solid #ddd', display: 'flex', justifyContent: 'space-between' }}>
                 <Box sx={{ flex: '0 0 50%' }}>
                   <Typography variant="body2" sx={{ mb: 0.5 }}>
-                    <strong>Customer Name:</strong> {currentBillData.customer?.cus_name || 'N/A'}
+                    Customer Name: <strong>{currentBillData.customer?.cus_name || 'N/A'}</strong>
                   </Typography>
                   <Typography variant="body2" sx={{ mb: 0.5 }}>
-                    <strong>Phone No:</strong> {currentBillData.customer?.cus_phone_no || 'N/A'}
+                    Phone No: <strong>{currentBillData.customer?.cus_phone_no || 'N/A'}</strong>
                   </Typography>
                   {currentBillData.customer?.cus_address && (
                     <Typography variant="body2">
-                      <strong>Address:</strong> {currentBillData.customer.cus_address}
+                      Address: <strong>{currentBillData.customer.cus_address}</strong>
                     </Typography>
                   )}
                 </Box>
                 <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', textAlign: 'right', flex: '0 0 50%' }}>
                   <Typography variant="body2" sx={{ mb: 0.5 }}>
-                    <strong>Invoice No:</strong> <strong>#{currentBillData.sale_id}</strong>
+                    Invoice No: <strong>#{currentBillData.sale_id}</strong>
                   </Typography>
                   <Typography variant="body2" sx={{ mb: 0.5 }}>
-                    <strong>Time:</strong> <strong>{new Date(currentBillData.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}</strong>
+                    Time: <strong>{new Date(currentBillData.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}</strong>
                   </Typography>
                   <Typography variant="body2" sx={{ mb: 0.5 }}>
-                    <strong>Date:</strong> <strong>{new Date(currentBillData.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</strong>
+                    Date: <strong>{new Date(currentBillData.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</strong>
                   </Typography>
                   <Typography variant="body2">
-                    <strong>Bill Type:</strong> <strong>{currentBillData.bill_type || 'BILL'}</strong>
+                    Bill Type: <strong>{currentBillData.bill_type || 'BILL'}</strong>
                   </Typography>
                 </Box>
               </Box>
@@ -2660,6 +3362,12 @@ function OrdersPageContent() {
                             <TableCell sx={{ fontWeight: 'bold', direction: 'rtl', px: 1, py: 0.5, border: '1px solid #ddd', fontSize: '0.875rem' }}>کرایہ</TableCell>
                             <TableCell align="right" sx={{ px: 1, py: 0.5, border: '1px solid #ddd', fontSize: '0.875rem' }}>
                               {parseFloat(currentBillData.shipping_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell sx={{ fontWeight: 'bold', direction: 'rtl', px: 1, py: 0.5, border: '1px solid #ddd', fontSize: '0.875rem' }}>رعایت</TableCell>
+                            <TableCell align="right" sx={{ px: 1, py: 0.5, border: '1px solid #ddd', fontSize: '0.875rem' }}>
+                              {parseFloat(currentBillData.discount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </TableCell>
                           </TableRow>
                           <TableRow sx={{ bgcolor: '#f5f5f5' }}>
@@ -2843,7 +3551,7 @@ function OrdersPageContent() {
                     letterSpacing: 1,
                     mt: 1
                   }}>
-                    SALE INVOICE
+                    ORDER INVOICE
                   </Typography>
                 </Box>
 
@@ -2851,29 +3559,29 @@ function OrdersPageContent() {
                 <Box sx={{ px: 2, py: 2, borderBottom: '1px solid #ddd', display: 'flex', justifyContent: 'space-between' }}>
                   <Box sx={{ flex: '0 0 50%' }}>
                     <Typography variant="body2" sx={{ mb: 0.5 }}>
-                      <strong>Customer Name:</strong> {currentBillData.customer?.cus_name || 'N/A'}
+                      Customer Name: <strong>{currentBillData.customer?.cus_name || 'N/A'}</strong>
                     </Typography>
                     <Typography variant="body2" sx={{ mb: 0.5 }}>
-                      <strong>Phone No:</strong> {currentBillData.customer?.cus_phone_no || 'N/A'}
+                      Phone No: <strong>{currentBillData.customer?.cus_phone_no || 'N/A'}</strong>
                     </Typography>
                     {currentBillData.customer?.cus_address && (
                       <Typography variant="body2">
-                        <strong>Address:</strong> {currentBillData.customer.cus_address}
+                        Address: <strong>{currentBillData.customer.cus_address}</strong>
                       </Typography>
                     )}
                   </Box>
                   <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', textAlign: 'right', flex: '0 0 50%' }}>
                     <Typography variant="body2" sx={{ mb: 0.5 }}>
-                      <strong>Invoice No:</strong> <strong>#{currentBillData.sale_id}</strong>
+                      Invoice No: <strong>#{currentBillData.sale_id}</strong>
                     </Typography>
                     <Typography variant="body2" sx={{ mb: 0.5 }}>
-                      <strong>Time:</strong> <strong>{new Date(currentBillData.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}</strong>
+                      Time: <strong>{new Date(currentBillData.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}</strong>
                     </Typography>
                     <Typography variant="body2" sx={{ mb: 0.5 }}>
-                      <strong>Date:</strong> <strong>{new Date(currentBillData.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</strong>
+                      Date: <strong>{new Date(currentBillData.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</strong>
                     </Typography>
                     <Typography variant="body2">
-                      <strong>Bill Type:</strong> <strong>{currentBillData.bill_type || 'BILL'}</strong>
+                      Bill Type: <strong>{currentBillData.bill_type || 'BILL'}</strong>
                     </Typography>
                   </Box>
                 </Box>
@@ -2961,13 +3669,19 @@ function OrdersPageContent() {
                             <TableRow>
                               <TableCell sx={{ fontWeight: 'bold', direction: 'rtl', px: 1, py: 0.5, border: '1px solid #ddd', fontSize: '0.875rem' }}>مزدوری</TableCell>
                               <TableCell align="right" sx={{ px: 1, py: 0.5, border: '1px solid #ddd', fontSize: '0.875rem' }}>
-                                {parseFloat(currentBillData.labour || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                {parseFloat(currentBillData.labour_charges || currentBillData.labour || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </TableCell>
                             </TableRow>
                             <TableRow>
                               <TableCell sx={{ fontWeight: 'bold', direction: 'rtl', px: 1, py: 0.5, border: '1px solid #ddd', fontSize: '0.875rem' }}>کرایہ</TableCell>
                               <TableCell align="right" sx={{ px: 1, py: 0.5, border: '1px solid #ddd', fontSize: '0.875rem' }}>
                                 {parseFloat(currentBillData.shipping_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </TableCell>
+                            </TableRow>
+                            <TableRow>
+                              <TableCell sx={{ fontWeight: 'bold', direction: 'rtl', px: 1, py: 0.5, border: '1px solid #ddd', fontSize: '0.875rem' }}>رعایت</TableCell>
+                              <TableCell align="right" sx={{ px: 1, py: 0.5, border: '1px solid #ddd', fontSize: '0.875rem' }}>
+                                {parseFloat(currentBillData.discount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </TableCell>
                             </TableRow>
                             <TableRow sx={{ bgcolor: '#f5f5f5' }}>
@@ -3112,336 +3826,449 @@ function OrdersPageContent() {
 
   const renderSalesListView = () => (
     <DashboardLayout>
-      <Container maxWidth="xl" sx={{ py: 4 }}>
+      <Container
+        maxWidth={false}
+        sx={{
+          py: 4,
+          maxWidth: {
+            xs: '100%',           // Mobile: full width
+            sm: '100%',           // Small screens: full width  
+            md: '100%',           // Medium screens: full width
+            lg: '1200px',         // Large screens: reasonable max width
+            xl: '1400px'          // Extra large screens: slightly larger max width
+          },
+          mx: 'auto',             // Center the content
+          px: { xs: 2, sm: 3, md: 4 } // Responsive horizontal padding
+        }}>
         <Stack spacing={4}>
-          {/* Header */}
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Box>
-              <Typography variant="h4" component="h1" sx={{ fontWeight: 'bold', color: 'text.primary' }}>
-                Order Management
-              </Typography>
-              <Typography variant="body1" sx={{ color: 'text.secondary', mt: 1 }}>
-                Manage your orders, customers, and revenue
-              </Typography>
-            </Box>
-            <Box sx={{ display: 'flex', gap: 2 }}>
-              <Button
-                variant="contained"
-                startIcon={<PackageIcon />}
-                onClick={() => showSnackbar('Hold Bill functionality will be implemented soon', 'info')}
-                sx={{
-                  background: 'linear-gradient(45deg, #FF6B35 30%, #F7931E 90%)',
-                  boxShadow: '0 3px 5px 2px rgba(255, 107, 53, .3)',
-                  '&:hover': {
-                    background: 'linear-gradient(45deg, #E55A2B 30%, #E8851B 90%)',
-                    transform: 'scale(1.05)',
+          {/* Header - New Order Button on the left */}
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', py: 2 }}>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setCurrentView('create')}
+              size="large"
+              sx={{
+                background: 'linear-gradient(45deg, #FFC107 30%, #FF8F00 90%)',
+                boxShadow: '0 4px 20px rgba(255, 193, 7, 0.3)',
+                px: 6,
+                py: 2,
+                fontSize: '1.2rem',
+                fontWeight: 'bold',
+                minWidth: '320px',
+                height: '70px',
+                borderRadius: 3,
+                position: 'relative',
+                '@keyframes float': {
+                  '0%, 100%': { transform: 'translateY(0px)' },
+                  '50%': { transform: 'translateY(-8px)' }
+                },
+                '@keyframes glow': {
+                  '0%, 100%': { boxShadow: '0 4px 20px rgba(255, 193, 7, 0.3)' },
+                  '50%': { boxShadow: '0 4px 35px rgba(255, 193, 7, 0.7)' }
+                },
+                '@keyframes shimmer': {
+                  '0%': { backgroundPosition: '-200% 0' },
+                  '100%': { backgroundPosition: '200% 0' }
+                },
+                '@keyframes pulse': {
+                  '0%, 100%': { transform: 'scale(1)' },
+                  '50%': { transform: 'scale(1.02)' }
+                },
+                '@keyframes plusGlow': {
+                  '0%, 100%': {
+                    textShadow: '0 0 5px rgba(255, 255, 255, 0.3)',
+                    filter: 'drop-shadow(0 0 3px rgba(255, 255, 255, 0.2))'
                   },
-                  transition: 'all 0.2s ease-in-out'
-                }}
-              >
-                Hold Bill
-              </Button>
-              <Button
-                variant="contained"
-                startIcon={<AddIcon />}
-                onClick={() => setCurrentView('create')}
-                sx={{
-                  background: 'linear-gradient(45deg, #4CAF50 30%, #2E7D32 90%)',
-                  boxShadow: '0 3px 5px 2px rgba(76, 175, 80, .3)',
-                  '&:hover': {
-                    background: 'linear-gradient(45deg, #388E3C 30%, #1B5E20 90%)',
-                    transform: 'scale(1.05)',
-                  },
-                  transition: 'all 0.2s ease-in-out'
-                }}
-              >
-                Add New Order
-              </Button>
-            </Box>
+                  '50%': {
+                    textShadow: '0 0 15px rgba(255, 255, 255, 0.8), 0 0 25px rgba(255, 255, 255, 0.4)',
+                    filter: 'drop-shadow(0 0 8px rgba(255, 255, 255, 0.6))'
+                  }
+                },
+                '@keyframes yellowTransition': {
+                  '0%': { background: 'linear-gradient(45deg, #FFC107 30%, #FF8F00 90%)' },
+                  '25%': { background: 'linear-gradient(45deg, #FFD54F 30%, #FFB74D 90%)' },
+                  '50%': { background: 'linear-gradient(45deg, #FFEB3B 30%, #FFC107 90%)' },
+                  '75%': { background: 'linear-gradient(45deg, #FFF176 30%, #FFD54F 90%)' },
+                  '100%': { background: 'linear-gradient(45deg, #FFC107 30%, #FF8F00 90%)' }
+                },
+                animation: 'float 3s ease-in-out infinite, glow 2s ease-in-out infinite alternate, pulse 4s ease-in-out infinite, yellowTransition 5s ease-in-out infinite',
+                backgroundSize: '200% 100%',
+                '& .MuiButton-startIcon': {
+                  animation: 'plusGlow 2s ease-in-out infinite alternate'
+                },
+                '&:hover': {
+                  background: 'linear-gradient(45deg, #FF8F00 30%, #E65100 90%)',
+                  transform: 'scale(1.08) translateY(-4px)',
+                  boxShadow: '0 10px 40px rgba(255, 193, 7, 0.6)',
+                  animation: 'shimmer 1.5s ease-in-out infinite, float 1s ease-in-out infinite, yellowTransition 2s ease-in-out infinite',
+                  '& .MuiButton-startIcon': {
+                    animation: 'plusGlow 1s ease-in-out infinite alternate, float 0.5s ease-in-out infinite'
+                  }
+                },
+                '&:active': {
+                  transform: 'scale(0.95) translateY(0px)',
+                  transition: 'all 0.1s ease-in-out'
+                },
+                transition: 'all 0.3s ease-in-out'
+              }}
+            >
+              <span style={{
+                textShadow: '0 0 8px rgba(255, 255, 255, 0.5), 0 0 16px rgba(255, 255, 255, 0.3)',
+                filter: 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.4))',
+                transition: 'all 0.3s ease-in-out'
+              }}>
+                ➕
+              </span>
+              New Order
+            </Button>
           </Box>
 
           {/* Stats Cards */}
-          <Grid container spacing={3}>
-            <Grid item xs={12} sm={6} md={3}>
-              <Card sx={{ background: 'linear-gradient(45deg, #2196F3 30%, #21CBF3 90%)', color: 'white' }}>
-                <CardContent>
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', mr: 2 }}>
-                      <ShoppingCartIcon />
+          <Box sx={{ flexShrink: 0, mb: 3, width: '100%' }}>
+            <Card sx={{
+              borderRadius: 2,
+              boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+              overflow: 'hidden',
+              bgcolor: 'white',
+              border: '1px solid #e5e7eb'
+            }}>
+              <Box sx={{
+                display: 'flex',
+                flexDirection: { xs: 'column', md: 'row' },
+                alignItems: 'stretch',
+                justifyContent: 'space-between',
+                p: 0
+              }}>
+                {[
+                  { title: 'Total Orders', val: totalSales, color: '#2563eb', bg: '#eff6ff', icon: <ShoppingCartIcon /> },
+                  { title: 'Total Revenue', val: totalSalesValue, color: '#16a34a', bg: '#f0fdf4', icon: <AttachMoneyIcon /> },
+                  { title: 'Total Discount', val: totalDiscount, color: '#dc2626', bg: '#fef2f2', icon: <TrendingDownIcon /> },
+                  { title: 'Total Payment', val: totalPayment, color: '#d97706', bg: '#fffbeb', icon: <CreditCardIcon /> }
+                ].map((stat, i) => (
+                  <Box key={i} sx={{
+                    flex: 1,
+                    p: 3,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 2.5,
+                    width: '100%',
+                    bgcolor: stat.bg,
+                    position: 'relative',
+                    borderBottom: i < 3 && { xs: '1px solid #e5e7eb', md: 'none' },
+                    '&:hover': {
+                      bgcolor: 'white',
+                      transition: 'background-color 0.3s'
+                    }
+                  }}>
+                    <Avatar sx={{
+                      bgcolor: 'white',
+                      color: stat.color,
+                      width: 52,
+                      height: 52,
+                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                      border: `1.5px solid ${stat.color}20`
+                    }}>
+                      {stat.icon}
                     </Avatar>
                     <Box>
-                      <Typography variant="body2" sx={{ opacity: 0.8 }}>
-                        Total Orders
+                      <Typography variant="overline" sx={{
+                        display: 'block',
+                        lineHeight: 1,
+                        mb: 0.5,
+                        color: '#6b7280',
+                        fontWeight: 700,
+                        letterSpacing: 1.2
+                      }}>
+                        {stat.title}
                       </Typography>
-                      <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-                        {totalSales}
-                      </Typography>
-                    </Box>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-
-            <Grid item xs={12} sm={6} md={3}>
-              <Card sx={{ background: 'linear-gradient(45deg, #4CAF50 30%, #8BC34A 90%)', color: 'white' }}>
-                <CardContent>
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', mr: 2 }}>
-                      <AttachMoneyIcon />
-                    </Avatar>
-                    <Box>
-                      <Typography variant="body2" sx={{ opacity: 0.8 }}>
-                        Total Revenue
-                      </Typography>
-                      <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-                        {totalSalesValue.toLocaleString()}
+                      <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: 0.5, color: stat.color }}>
+                        {i > 0 && <span style={{ fontSize: '0.8rem', marginRight: 4, opacity: 0.6 }}>PKR</span>}
+                        {stat.val.toLocaleString()}
                       </Typography>
                     </Box>
+                    {i < 3 && (
+                      <Divider
+                        orientation="vertical"
+                        flexItem
+                        sx={{
+                          display: { xs: 'none', md: 'block' },
+                          bgcolor: '#e5e7eb',
+                          height: 60,
+                          position: 'absolute',
+                          right: 0,
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          zIndex: 1
+                        }}
+                      />
+                    )}
                   </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-
-            <Grid item xs={12} sm={6} md={3}>
-              <Card sx={{ background: 'linear-gradient(45deg, #9C27B0 30%, #E91E63 90%)', color: 'white' }}>
-                <CardContent>
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', mr: 2 }}>
-                      <TrendingDownIcon />
-                    </Avatar>
-                    <Box>
-                      <Typography variant="body2" sx={{ opacity: 0.8 }}>
-                        Total Discount
-                      </Typography>
-                      <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-                        {totalDiscount.toLocaleString()}
-                      </Typography>
-                    </Box>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-
-            <Grid item xs={12} sm={6} md={3}>
-              <Card sx={{ background: 'linear-gradient(45deg, #FF9800 30%, #F44336 90%)', color: 'white' }}>
-                <CardContent>
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', mr: 2 }}>
-                      <CreditCardIcon />
-                    </Avatar>
-                    <Box>
-                      <Typography variant="body2" sx={{ opacity: 0.8 }}>
-                        Total Payment
-                      </Typography>
-                      <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-                        {totalPayment.toLocaleString()}
-                      </Typography>
-                    </Box>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-          </Grid>
+                ))}
+              </Box>
+            </Card>
+          </Box>
 
           {/* Sales Filter */}
-          <Card sx={{ mb: 3 }}>
-            <CardContent sx={{ p: 2 }}>
-              <Typography variant="h6" sx={{ mb: 2, fontWeight: 'semibold' }}>
-                Filter Orders
-              </Typography>
-              <Grid container spacing={2}>
-                <Grid item xs={12} md={3}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    label="Search"
-                    placeholder="Search by Order ID, Customer, or Reference"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <SearchIcon />
-                        </InputAdornment>
-                      ),
-                    }}
-                  />
-                </Grid>
-                <Grid item xs={12} md={3}>
-                  <Autocomplete
-                    fullWidth
-                    size="small"
-                    options={customers.filter(customer => {
-                      // Filter for customers with category "Customer"
-                      const isCustomer = customer.customer_category &&
-                        customer.customer_category.cus_cat_title &&
-                        customer.customer_category.cus_cat_title.toLowerCase().includes('customer');
-                      console.log('🔍 Orders List Customer filtering:', customer.cus_name, 'isCustomer:', isCustomer, 'customer_category:', customer.customer_category);
-                      return isCustomer;
-                    })}
-                    getOptionLabel={(option) => option.cus_name || ''}
-                    value={customers.find(c => c.cus_id.toString() === filterCustomer) || null}
-                    onChange={(event, newValue) => {
-                      console.log('🔍 Sales List Customer selected:', newValue);
-                      setFilterCustomer(newValue ? newValue.cus_id.toString() : '');
-                    }}
-                    renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        label="Customer"
-                        placeholder="Select customer"
-                        sx={{ minWidth: 250 }}
-                      />
-                    )}
-                  />
-                  {/* Debug info */}
-                  <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                    Debug: {customers.length} total customers, {customers.filter(c => c.customer_category?.cus_cat_title?.toLowerCase().includes('customer')).length} customers
+          {/* Filters & Sorting Section */}
+          <Box sx={{ flexShrink: 0, mb: 3, width: '100%' }}>
+            <Card sx={{
+              borderRadius: 2,
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+              width: '100%',
+              border: '1px solid #e2e8f0',
+              bgcolor: '#f8fafc'
+            }}>
+              <CardContent sx={{ p: 3 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#334155', display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <FilterIcon sx={{ color: '#64748b' }} />
+                    Filters & Sorting
                   </Typography>
-                </Grid>
-                <Grid item xs={12} md={2}>
-                  <FormControl fullWidth size="small" sx={{ minWidth: 150 }}>
-                    <InputLabel>Bill Type</InputLabel>
-                    <Select
-                      value={filterBillType}
-                      onChange={(e) => setFilterBillType(e.target.value)}
-                      label="Bill Type"
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Typography variant="body2" sx={{ color: '#64748b', fontWeight: 500 }}>
+                      Showing <strong>{filteredSales.length}</strong> of <strong>{sales.length}</strong> orders
+                    </Typography>
+                    <Button
+                      onClick={clearFilters}
+                      size="small"
+                      startIcon={<ClearIcon />}
+                      sx={{
+                        color: '#64748b',
+                        textTransform: 'none',
+                        fontWeight: 600,
+                        '&:hover': { color: '#ef4444', bgcolor: '#fee2e2' }
+                      }}
                     >
-                      <MenuItem value="">All Types</MenuItem>
-                      <MenuItem value="ORDER">Order</MenuItem>
-                      <MenuItem value="BILL">Bill</MenuItem>
-                      <MenuItem value="QUOTATION">Quotation</MenuItem>
-                      <MenuItem value="SALE_RETURN">Sale Return</MenuItem>
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid item xs={12} md={3}>
+                      Clear All Filters
+                    </Button>
+                  </Box>
+                </Box>
+                <Box sx={{
+                  display: 'grid',
+                  gridTemplateColumns: {
+                    xs: '1fr',
+                    sm: 'repeat(2, 1fr)',
+                    md: 'repeat(4, 1fr)'
+                  },
+                  gap: 3,
+                  width: '100%'
+                }}>
+                  {/* Search */}
+                  <Box>
+                    <TextField
+                      fullWidth
+                      label="Search Orders"
+                      placeholder="ID, Customer, or Reference..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      onFocus={(e) => e.target.select()}
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <SearchIcon size={18} sx={{ color: '#94a3b8' }} />
+                          </InputAdornment>
+                        ),
+                      }}
+                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'white' } }}
+                    />
+                  </Box>
+
+                  {/* Customer Filter */}
+                  <Box>
+                    <Autocomplete
+                      fullWidth
+                      options={customers.filter(customer => {
+                        // Filter for customers with category "Customer"
+                        const isCustomer = customer.customer_category &&
+                          customer.customer_category.cus_cat_title &&
+                          customer.customer_category.cus_cat_title.toLowerCase().includes('customer');
+                        return isCustomer;
+                      })}
+                      getOptionLabel={(option) => option.cus_name || ''}
+                      value={customers.find(c => c.cus_id.toString() === filterCustomer) || null}
+                      onChange={(event, newValue) => {
+                        setFilterCustomer(newValue ? newValue.cus_id.toString() : '');
+                      }}
+                      autoSelect={true}
+                      autoHighlight={true}
+                      openOnFocus={true}
+                      selectOnFocus={true}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          label="Customer"
+                          placeholder="All Customers"
+                          onFocus={(e) => e.target.select()}
+                          sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'white' } }}
+                        />
+                      )}
+                    />
+                  </Box>
+                  {/* Bill Type Filter */}
+                  <Box>
+                    <FormControl fullWidth sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'white' } }}>
+                      <InputLabel>Bill Type</InputLabel>
+                      <Select
+                        value={filterBillType}
+                        onChange={(e) => setFilterBillType(e.target.value)}
+                        label="Bill Type"
+                      >
+                        <MenuItem value="">All Types</MenuItem>
+                        <MenuItem value="ORDER">Order</MenuItem>
+                        <MenuItem value="BILL">Bill</MenuItem>
+                        <MenuItem value="QUOTATION">Quotation</MenuItem>
+                        <MenuItem value="SALE_RETURN">Sale Return</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Box>
+
+                  {/* Store Filter */}
+                  <Box>
+                    <Autocomplete
+                      fullWidth
+                      options={stores}
+                      getOptionLabel={(option) => option.store_name || ''}
+                      value={stores.find(s => s.storeid.toString() === filterStore) || null}
+                      onChange={(event, newValue) => setFilterStore(newValue ? newValue.storeid.toString() : '')}
+                      autoSelect={true}
+                      autoHighlight={true}
+                      openOnFocus={true}
+                      selectOnFocus={true}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          label="Store"
+                          placeholder="All Stores"
+                          onFocus={(e) => e.target.select()}
+                          sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'white' } }}
+                        />
+                      )}
+                    />
+                  </Box>
+                  {/* Date From */}
+                  <Box>
+                    <TextField
+                      fullWidth
+                      label="From Date"
+                      type="date"
+                      value={dateFrom}
+                      onChange={(e) => setDateFrom(e.target.value)}
+                      InputLabelProps={{ shrink: true }}
+                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'white' } }}
+                    />
+                  </Box>
+
+                  {/* Date To */}
+                  <Box>
+                    <TextField
+                      fullWidth
+                      label="To Date"
+                      type="date"
+                      value={dateTo}
+                      onChange={(e) => setDateTo(e.target.value)}
+                      InputLabelProps={{ shrink: true }}
+                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'white' } }}
+                    />
+                  </Box>
+
+                  {/* Min Amount */}
+                  <Box>
+                    <TextField
+                      fullWidth
+                      label="Min Amount"
+                      type="number"
+                      placeholder="e.g. 1000"
+                      value={filterMinAmount}
+                      onChange={(e) => setFilterMinAmount(e.target.value)}
+                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'white' } }}
+                    />
+                  </Box>
+
+                  {/* Max Amount */}
+                  <Box>
+                    <TextField
+                      fullWidth
+                      label="Max Amount"
+                      type="number"
+                      placeholder="e.g. 50000"
+                      value={filterMaxAmount}
+                      onChange={(e) => setFilterMaxAmount(e.target.value)}
+                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'white' } }}
+                    />
+                  </Box>
+
+                  {/* Payment Type */}
+                  <Box>
+                    <FormControl fullWidth sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'white' } }}>
+                      <InputLabel>Payment Type</InputLabel>
+                      <Select
+                        value={filterPaymentType}
+                        onChange={(e) => setFilterPaymentType(e.target.value)}
+                        label="Payment Type"
+                      >
+                        <MenuItem value="">All Types</MenuItem>
+                        <MenuItem value="CASH">Cash</MenuItem>
+                        <MenuItem value="BANK">Bank</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Box>
+
+                  {/* Balance Status */}
+                  <Box>
+                    <FormControl fullWidth sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'white' } }}>
+                      <InputLabel>Balance Status</InputLabel>
+                      <Select
+                        value={filterBalanceStatus}
+                        onChange={(e) => setFilterBalanceStatus(e.target.value)}
+                        label="Balance Status"
+                      >
+                        <MenuItem value="">All</MenuItem>
+                        <MenuItem value="with_balance">With Balance</MenuItem>
+                        <MenuItem value="without_balance">Without Balance</MenuItem>
+                        <MenuItem value="overpaid">Overpaid</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Box>
+
+                  {/* Sort */}
                   <Autocomplete
                     fullWidth
-                    size="small"
-                    options={stores}
-                    getOptionLabel={(option) => option.store_name || ''}
-                    value={stores.find(s => s.storeid.toString() === filterStore) || null}
+                    options={[
+                      { value: 'created_at-desc', label: 'Newest First' },
+                      { value: 'created_at-asc', label: 'Oldest First' },
+                      { value: 'customer-asc', label: 'Customer A-Z' },
+                      { value: 'customer-desc', label: 'Customer Z-A' },
+                      { value: 'total_amount-desc', label: 'Amount High-Low' },
+                      { value: 'total_amount-asc', label: 'Amount Low-High' }
+                    ]}
+                    getOptionLabel={(option) => option.label}
+                    value={{ value: `${sortBy}-${sortOrder}`, label: getSortLabel(`${sortBy}-${sortOrder}`) }}
                     onChange={(event, newValue) => {
-                      setFilterStore(newValue ? newValue.storeid.toString() : '');
+                      if (newValue) {
+                        const [field, order] = newValue.value.split('-');
+                        setSortBy(field);
+                        setSortOrder(order);
+                      }
                     }}
+                    autoSelect={true}
+                    autoHighlight={true}
+                    openOnFocus={true}
+                    selectOnFocus={true}
                     renderInput={(params) => (
                       <TextField
                         {...params}
-                        label="Store"
-                        placeholder="Select store"
+                        label="Sort By"
+                        placeholder="Select..."
+                        onFocus={(e) => e.target.select()}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'white' } }}
                       />
                     )}
                   />
-                </Grid>
-                <Grid item xs={12} md={2}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Payment Type</InputLabel>
-                    <Select
-                      value={filterPaymentType}
-                      onChange={(e) => setFilterPaymentType(e.target.value)}
-                      label="Payment Type"
-                    >
-                      <MenuItem value="">All Types</MenuItem>
-                      <MenuItem value="CASH">Cash</MenuItem>
-                      <MenuItem value="BANK">Bank</MenuItem>
-                    </Select>
-                  </FormControl>
-                </Grid>
-              </Grid>
-              <Grid container spacing={2} sx={{ mt: 1 }}>
-                <Grid item xs={12} md={2}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    type="date"
-                    label="From Date"
-                    value={dateFrom}
-                    onChange={(e) => setDateFrom(e.target.value)}
-                    InputLabelProps={{ shrink: true }}
-                  />
-                </Grid>
-                <Grid item xs={12} md={2}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    type="date"
-                    label="To Date"
-                    value={dateTo}
-                    onChange={(e) => setDateTo(e.target.value)}
-                    InputLabelProps={{ shrink: true }}
-                  />
-                </Grid>
-                <Grid item xs={12} md={2}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    type="number"
-                    label="Min Amount"
-                    placeholder="0"
-                    value={filterMinAmount}
-                    onChange={(e) => setFilterMinAmount(e.target.value)}
-                    InputProps={{
-                      startAdornment: <InputAdornment position="start">Rs</InputAdornment>,
-                    }}
-                  />
-                </Grid>
-                <Grid item xs={12} md={2}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    type="number"
-                    label="Max Amount"
-                    placeholder="0"
-                    value={filterMaxAmount}
-                    onChange={(e) => setFilterMaxAmount(e.target.value)}
-                    InputProps={{
-                      startAdornment: <InputAdornment position="start">Rs</InputAdornment>,
-                    }}
-                  />
-                </Grid>
-                <Grid item xs={12} md={2}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Balance Status</InputLabel>
-                    <Select
-                      value={filterBalanceStatus}
-                      onChange={(e) => setFilterBalanceStatus(e.target.value)}
-                      label="Balance Status"
-                    >
-                      <MenuItem value="">All</MenuItem>
-                      <MenuItem value="with_balance">With Balance</MenuItem>
-                      <MenuItem value="without_balance">Without Balance</MenuItem>
-                      <MenuItem value="overpaid">Overpaid</MenuItem>
-                    </Select>
-                  </FormControl>
-                </Grid>
-              </Grid>
-              <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
-                <Button
-                  variant="outlined"
-                  size="small"
-                  onClick={() => {
-                    setSearchTerm('');
-                    setFilterCustomer('');
-                    setFilterBillType('');
-                    setFilterStore('');
-                    setFilterPaymentType('');
-                    setFilterMinAmount('');
-                    setFilterMaxAmount('');
-                    setFilterBalanceStatus('');
-                    setDateFrom('');
-                    setDateTo('');
-                  }}
-                  startIcon={<ClearIcon />}
-                >
-                  Clear Filters
-                </Button>
-                <Typography variant="body2" color="text.secondary" sx={{ alignSelf: 'center', ml: 2 }}>
-                  Showing {filteredSales.length} of {sales.length} sales
-                </Typography>
-              </Box>
-            </CardContent>
-          </Card>
+                </Box>
+              </CardContent>
+            </Card>
+          </Box>
 
           {/* Sales Table */}
           <Card>
@@ -3641,18 +4468,84 @@ function OrdersPageContent() {
 
         <DialogContent sx={{ p: 3 }}>
           <Box component="form" sx={{ mt: 2 }}>
+            {/* Quick Actions */}
+            <Box sx={{
+              bgcolor: 'grey.50',
+              borderRadius: 2,
+              p: 2,
+              border: 1,
+              borderColor: 'grey.200',
+              mb: 3
+            }}>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<BusinessIcon />}
+                  onClick={() => setShowCustomerCategoryPopup(true)}
+                  sx={{
+                    borderColor: 'success.main',
+                    color: 'success.main',
+                    '&:hover': {
+                      borderColor: 'success.dark',
+                      backgroundColor: 'success.light',
+                      color: 'success.dark'
+                    }
+                  }}
+                >
+                  Add Account Category
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<PersonIcon />}
+                  onClick={() => setShowCustomerTypePopup(true)}
+                  sx={{
+                    borderColor: 'secondary.main',
+                    color: 'secondary.main',
+                    '&:hover': {
+                      borderColor: 'secondary.dark',
+                      backgroundColor: 'secondary.light',
+                      color: 'secondary.dark'
+                    }
+                  }}
+                >
+                  Add Type
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<MapPinIcon />}
+                  onClick={() => setShowCityPopup(true)}
+                  sx={{
+                    borderColor: 'warning.main',
+                    color: 'warning.main',
+                    '&:hover': {
+                      borderColor: 'warning.dark',
+                      backgroundColor: 'warning.light',
+                      color: 'warning.dark'
+                    }
+                  }}
+                >
+                  Add City
+                </Button>
+              </Box>
+            </Box>
+
             <Grid container spacing={3}>
               {/* First Row - Name, Primary Phone, Secondary Phone */}
               <Grid item xs={12} md={4}>
                 <TextField
                   fullWidth
                   required
-                  label="Customer Name"
+                  autoFocus
+                  inputRef={customerNameInputRef}
+                  label="Account Name"
                   name="cus_name"
                   value={newCustomer.cus_name}
                   onChange={(e) => setNewCustomer(prev => ({ ...prev, cus_name: e.target.value }))}
                   sx={{ minWidth: 250 }}
-                  placeholder="Enter customer name"
+                  placeholder="Enter account name"
                   InputProps={{
                     startAdornment: (
                       <InputAdornment position="start">
@@ -3704,98 +4597,136 @@ function OrdersPageContent() {
                 />
               </Grid>
 
-              {/* Second Row - Customer Type, Category */}
-
-              <Grid item xs={12} md={4}>
-                <Autocomplete
+              {/* Address Field */}
+              <Grid item xs={12}>
+                <TextField
                   fullWidth
-                  required
-                  options={[
-                    { id: '', title: 'Select a type' },
-                    ...customerTypes.map(type => ({
-                      id: type.cus_type_id,
-                      title: type.cus_type_title
-                    }))
-                  ]}
-                  value={(() => {
-                    const options = [
-                      { id: '', title: 'Select a type' },
-                      ...customerTypes.map(type => ({
-                        id: type.cus_type_id,
-                        title: type.cus_type_title
-                      }))
-                    ];
-                    return options.find(option => option.id === newCustomer.cus_type) || { id: '', title: 'Select a type' };
-                  })()}
-                  onChange={(event, newValue) => {
-                    setNewCustomer(prev => ({
-                      ...prev,
-                      cus_type: newValue ? newValue.id : ''
-                    }));
+                  label="Address"
+                  name="cus_address"
+                  value={newCustomer.cus_address}
+                  onChange={(e) => setNewCustomer(prev => ({ ...prev, cus_address: e.target.value }))}
+                  sx={{ minWidth: 250 }}
+                  placeholder="Enter customer address"
+                  multiline
+                  rows={2}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <MapPinIcon />
+                      </InputAdornment>
+                    ),
                   }}
-                  getOptionLabel={(option) => option.title}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      label="Customer Type"
-                      sx={{ minWidth: 250 }}
-                      InputProps={{
-                        ...params.InputProps,
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <PersonIcon />
-                          </InputAdornment>
-                        ),
-                      }}
-                    />
-                  )}
                 />
               </Grid>
 
+              {/* Second Row - Customer Type, Category */}
+
               <Grid item xs={12} md={4}>
-                <Autocomplete
-                  fullWidth
-                  required
-                  options={[
-                    { id: '', title: 'Select a category' },
-                    ...customerCategories.map(category => ({
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <IconButton
+                    size="small"
+                    aria-label="Add type"
+                    onMouseDown={(ev) => ev.stopPropagation()}
+                    onClick={() => setShowCustomerTypePopup(true)}
+                    sx={{ color: 'primary.main' }}
+                  >
+                    <AddIcon />
+                  </IconButton>
+
+                  <Autocomplete
+                    fullWidth
+                    required
+                    openOnFocus
+                    autoHighlight
+                    selectOnFocus
+                    autoSelect
+                    sx={{ flex: 1 }}
+                    options={customerTypes.map(type => ({
+                      id: type.cus_type_id,
+                      title: type.cus_type_title
+                    }))}
+                    value={customerTypes.map(type => ({
+                      id: type.cus_type_id,
+                      title: type.cus_type_title
+                    })).find(option => option.id === newCustomer.cus_type) || null}
+                    onChange={(event, newValue) => {
+                      setNewCustomer(prev => ({
+                        ...prev,
+                        cus_type: newValue ? newValue.id : ''
+                      }));
+                    }}
+                    getOptionLabel={(option) => option.title || ''}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="Account Type"
+                        sx={{ minWidth: 250 }}
+                        InputProps={{
+                          ...params.InputProps,
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <PersonIcon />
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    )}
+                  />
+                </Box>
+              </Grid>
+
+              <Grid item xs={12} md={4}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <IconButton
+                    size="small"
+                    aria-label="Add category"
+                    onMouseDown={(ev) => ev.stopPropagation()}
+                    onClick={() => setShowCustomerCategoryPopup(true)}
+                    sx={{ color: 'primary.main' }}
+                  >
+                    <AddIcon />
+                  </IconButton>
+
+                  <Autocomplete
+                    fullWidth
+                    required
+                    openOnFocus
+                    autoHighlight
+                    selectOnFocus
+                    autoSelect
+                    sx={{ flex: 1 }}
+                    options={customerCategories.map(category => ({
                       id: category.cus_cat_id,
                       title: category.cus_cat_title
-                    }))
-                  ]}
-                  value={(() => {
-                    const options = [
-                      { id: '', title: 'Select a category' },
-                      ...customerCategories.map(category => ({
-                        id: category.cus_cat_id,
-                        title: category.cus_cat_title
-                      }))
-                    ];
-                    return options.find(option => option.id === newCustomer.cus_category) || { id: '', title: 'Select a category' };
-                  })()}
-                  onChange={(event, newValue) => {
-                    setNewCustomer(prev => ({
-                      ...prev,
-                      cus_category: newValue ? newValue.id : ''
-                    }));
-                  }}
-                  getOptionLabel={(option) => option.title}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      label="Customer Category"
-                      sx={{ minWidth: 250 }}
-                      InputProps={{
-                        ...params.InputProps,
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <BusinessIcon />
-                          </InputAdornment>
-                        ),
-                      }}
-                    />
-                  )}
-                />
+                    }))}
+                    value={customerCategories.map(category => ({
+                      id: category.cus_cat_id,
+                      title: category.cus_cat_title
+                    })).find(option => option.id === newCustomer.cus_category) || null}
+                    onChange={(event, newValue) => {
+                      setNewCustomer(prev => ({
+                        ...prev,
+                        cus_category: newValue ? newValue.id : ''
+                      }));
+                    }}
+                    getOptionLabel={(option) => option.title || ''}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="Account Category"
+                        sx={{ minWidth: 250 }}
+                        InputProps={{
+                          ...params.InputProps,
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <BusinessIcon />
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    )}
+                  />
+                </Box>
               </Grid>
 
               {/* Third Row - Reference, Account Info, City */}
@@ -3824,48 +4755,56 @@ function OrdersPageContent() {
               </Grid>
 
               <Grid item xs={12} md={4}>
-                <Autocomplete
-                  fullWidth
-                  options={[
-                    { id: '', title: 'Select a city' },
-                    ...cities.map(city => ({
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <IconButton
+                    size="small"
+                    aria-label="Add city"
+                    onMouseDown={(ev) => ev.stopPropagation()}
+                    onClick={() => setShowCityPopup(true)}
+                    sx={{ color: 'primary.main' }}
+                  >
+                    <AddIcon />
+                  </IconButton>
+
+                  <Autocomplete
+                    fullWidth
+                    openOnFocus
+                    autoHighlight
+                    selectOnFocus
+                    autoSelect
+                    sx={{ flex: 1 }}
+                    options={cities.map(city => ({
                       id: city.city_id,
                       title: city.city_name
-                    }))
-                  ]}
-                  value={(() => {
-                    const options = [
-                      { id: '', title: 'Select a city' },
-                      ...cities.map(city => ({
-                        id: city.city_id,
-                        title: city.city_name
-                      }))
-                    ];
-                    return options.find(option => option.id === newCustomer.city_id) || { id: '', title: 'Select a city' };
-                  })()}
-                  onChange={(event, newValue) => {
-                    setNewCustomer(prev => ({
-                      ...prev,
-                      city_id: newValue ? newValue.id : ''
-                    }));
-                  }}
-                  getOptionLabel={(option) => option.title}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      label="City"
-                      sx={{ minWidth: 250 }}
-                      InputProps={{
-                        ...params.InputProps,
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <MapPinIcon />
-                          </InputAdornment>
-                        ),
-                      }}
-                    />
-                  )}
-                />
+                    }))}
+                    value={cities.map(city => ({
+                      id: city.city_id,
+                      title: city.city_name
+                    })).find(option => option.id === newCustomer.city_id) || null}
+                    onChange={(event, newValue) => {
+                      setNewCustomer(prev => ({
+                        ...prev,
+                        city_id: newValue ? newValue.id : ''
+                      }));
+                    }}
+                    getOptionLabel={(option) => option.title || ''}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="City"
+                        sx={{ minWidth: 250 }}
+                        InputProps={{
+                          ...params.InputProps,
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <MapPinIcon />
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    )}
+                  />
+                </Box>
               </Grid>
 
               {/* Fourth Row - CNIC, NTN, Balance */}
@@ -3899,7 +4838,7 @@ function OrdersPageContent() {
                   label="Initial Balance"
                   name="cus_balance"
                   type="number"
-                  inputProps={{ step: "0.01" }}
+                  inputProps={{}}
                   value={newCustomer.cus_balance}
                   onChange={(e) => setNewCustomer(prev => ({ ...prev, cus_balance: e.target.value }))}
                   sx={{ minWidth: 250 }}
@@ -4086,7 +5025,7 @@ function OrdersPageContent() {
                           <TableRow key={detail.sale_detail_id || index}>
                             <TableCell sx={{ px: 1 }}>{index + 1}</TableCell>
                             <TableCell sx={{ px: 1 }}>{detail.product?.pro_title || detail.product?.pro_name || detail.product?.prod_name || 'N/A'}</TableCell>
-                            <TableCell sx={{ px: 1 }} align="right">{detail.qnty || 0}</TableCell>
+                            <TableCell sx={{ px: 1 }} align="right">{Number(detail.qnty || 0).toFixed(2)}</TableCell>
                             <TableCell sx={{ px: 1 }} align="right">{parseFloat(detail.unit_rate || 0).toFixed(2)}</TableCell>
                             <TableCell sx={{ px: 1 }} align="right">{parseFloat(detail.total_amount || 0).toFixed(2)}</TableCell>
                           </TableRow>
@@ -4620,6 +5559,243 @@ function OrdersPageContent() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Account Category Popup */}
+      <Dialog
+        open={showCustomerCategoryPopup}
+        onClose={() => setShowCustomerCategoryPopup(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{
+          background: 'linear-gradient(45deg, #4caf50 30%, #2e7d32 90%)',
+          color: 'white',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between'
+        }}>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <Avatar sx={{
+              bgcolor: 'rgba(255,255,255,0.2)',
+              mr: 2,
+              width: 40,
+              height: 40
+            }}>
+              <BusinessIcon />
+            </Avatar>
+            <Box>
+              <Typography variant="h6" component="div" sx={{ fontWeight: 'bold' }}>
+                Add Account Category
+              </Typography>
+              <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                Create a new account category
+              </Typography>
+            </Box>
+          </Box>
+          <IconButton
+            onClick={() => setShowCustomerCategoryPopup(false)}
+            sx={{ color: 'white' }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+
+        <DialogContent sx={{ p: 3 }}>
+          <Box component="form" sx={{ mt: 2 }}>
+            <TextField
+              fullWidth
+              required
+              label="Account Category Title"
+              value={customerCategoryFormData.cus_cat_title}
+              onChange={(e) => setCustomerCategoryFormData({ cus_cat_title: e.target.value })}
+              disabled={isAddingCustomerCategory}
+              placeholder="Enter account category title"
+              sx={{ mb: 2 }}
+            />
+          </Box>
+        </DialogContent>
+
+        <DialogActions sx={{ p: 3, borderTop: 1, borderColor: 'divider' }}>
+          <Button
+            onClick={() => setShowCustomerCategoryPopup(false)}
+            sx={{ textTransform: 'none' }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleAddCustomerCategory}
+            disabled={isAddingCustomerCategory}
+            sx={{
+              background: 'linear-gradient(45deg, #4caf50 30%, #2e7d32 90%)',
+              textTransform: 'none',
+              '&:hover': {
+                background: 'linear-gradient(45deg, #388e3c 30%, #1b5e20 90%)',
+              }
+            }}
+          >
+            {isAddingCustomerCategory ? 'Adding...' : 'Add Category'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Account Type Popup */}
+      <Dialog
+        open={showCustomerTypePopup}
+        onClose={() => setShowCustomerTypePopup(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{
+          background: 'linear-gradient(45deg, #2196f3 30%, #9c27b0 90%)',
+          color: 'white',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between'
+        }}>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <Avatar sx={{
+              bgcolor: 'rgba(255,255,255,0.2)',
+              mr: 2,
+              width: 40,
+              height: 40
+            }}>
+              <PersonIcon />
+            </Avatar>
+            <Box>
+              <Typography variant="h6" component="div" sx={{ fontWeight: 'bold' }}>
+                Add Account Type
+              </Typography>
+              <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                Create a new account type
+              </Typography>
+            </Box>
+          </Box>
+          <IconButton
+            onClick={() => setShowCustomerTypePopup(false)}
+            sx={{ color: 'white' }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+
+        <DialogContent sx={{ p: 3 }}>
+          <Box component="form" sx={{ mt: 2 }}>
+            <TextField
+              fullWidth
+              required
+              label="Account Type Title"
+              value={customerTypeFormData.cus_type_title}
+              onChange={(e) => setCustomerTypeFormData({ cus_type_title: e.target.value })}
+              disabled={isAddingCustomerType}
+              placeholder="Enter account type title"
+              sx={{ mb: 2 }}
+            />
+          </Box>
+        </DialogContent>
+
+        <DialogActions sx={{ p: 3, borderTop: 1, borderColor: 'divider' }}>
+          <Button
+            onClick={() => setShowCustomerTypePopup(false)}
+            sx={{ textTransform: 'none' }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleAddCustomerType}
+            disabled={isAddingCustomerType}
+            sx={{
+              background: 'linear-gradient(45deg, #2196f3 30%, #9c27b0 90%)',
+              textTransform: 'none',
+              '&:hover': {
+                background: 'linear-gradient(45deg, #1976d2 30%, #7b1fa2 90%)',
+              }
+            }}
+          >
+            {isAddingCustomerType ? 'Adding...' : 'Add Type'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* City Popup */}
+      <Dialog
+        open={showCityPopup}
+        onClose={() => setShowCityPopup(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{
+          background: 'linear-gradient(45deg, #ff9800 30%, #f57c00 90%)',
+          color: 'white',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between'
+        }}>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <Avatar sx={{
+              bgcolor: 'rgba(255,255,255,0.2)',
+              mr: 2,
+              width: 40,
+              height: 40
+            }}>
+              <MapPinIcon />
+            </Avatar>
+            <Box>
+              <Typography variant="h6" component="div" sx={{ fontWeight: 'bold' }}>
+                Add City
+              </Typography>
+              <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                Create a new city
+              </Typography>
+            </Box>
+          </Box>
+          <IconButton
+            onClick={() => setShowCityPopup(false)}
+            sx={{ color: 'white' }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+
+        <DialogContent sx={{ p: 3 }}>
+          <Box component="form" sx={{ mt: 2 }}>
+            <TextField
+              fullWidth
+              required
+              label="City Name"
+              value={cityFormData.city_name}
+              onChange={(e) => setCityFormData({ city_name: e.target.value })}
+              disabled={isAddingCity}
+              placeholder="Enter city name"
+              sx={{ mb: 2 }}
+            />
+          </Box>
+        </DialogContent>
+
+        <DialogActions sx={{ p: 3, borderTop: 1, borderColor: 'divider' }}>
+          <Button
+            onClick={() => setShowCityPopup(false)}
+            sx={{ textTransform: 'none' }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleAddCity}
+            disabled={isAddingCity}
+            sx={{
+              background: 'linear-gradient(45deg, #ff9800 30%, #f57c00 90%)',
+              textTransform: 'none',
+              '&:hover': {
+                background: 'linear-gradient(45deg, #f57c00 30%, #ef6c00 90%)',
+              }
+            }}
+          >
+            {isAddingCity ? 'Adding...' : 'Add City'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 }
@@ -4628,7 +5804,20 @@ export default function OrdersPage() {
   return (
     <Suspense fallback={
       <DashboardLayout>
-        <Container maxWidth="xl" sx={{ py: 4 }}>
+        <Container
+          maxWidth={false}
+          sx={{
+            py: 4,
+            maxWidth: {
+              xs: '100%',           // Mobile: full width
+              sm: '100%',           // Small screens: full width  
+              md: '100%',           // Medium screens: full width
+              lg: '1200px',         // Large screens: reasonable max width
+              xl: '1400px'          // Extra large screens: slightly larger max width
+            },
+            mx: 'auto',             // Center the content
+            px: { xs: 2, sm: 3, md: 4 } // Responsive horizontal padding
+          }}>
           <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
             <CircularProgress />
           </Box>

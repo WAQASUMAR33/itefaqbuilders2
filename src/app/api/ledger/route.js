@@ -23,7 +23,9 @@ export async function GET(request) {
             select: {
               cus_id: true,
               cus_name: true,
-              cus_phone_no: true
+              cus_phone_no: true,
+              cus_category: true,
+              cus_type: true
             }
           },
           updated_by_user: {
@@ -56,7 +58,9 @@ export async function GET(request) {
           select: {
             cus_id: true,
             cus_name: true,
-            cus_phone_no: true
+            cus_phone_no: true,
+            cus_category: true,
+            cus_type: true
           }
         },
         updated_by_user: {
@@ -83,13 +87,13 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { 
-      cus_id, 
-      debit_amount = 0, 
-      credit_amount = 0, 
-      bill_no, 
-      trnx_type, 
-      details, 
+    const {
+      cus_id,
+      debit_amount = 0,
+      credit_amount = 0,
+      bill_no,
+      trnx_type,
+      details,
       payments = 0,
       updated_by
     } = body;
@@ -110,43 +114,62 @@ export async function POST(request) {
 
     // Check if customer exists
     const customer = await prisma.customer.findUnique({
-      where: { cus_id }
+      where: { cus_id: parseInt(cus_id) }
     });
 
     if (!customer) {
       return errorResponse('Customer not found', 404);
     }
 
+    // Verify updated_by user exists to avoid foreign key violation
+    let validUpdatedBy = null;
+    if (updated_by) {
+      const userExists = await prisma.users.findUnique({
+        where: { user_id: parseInt(updated_by) }
+      });
+      if (userExists) {
+        validUpdatedBy = parseInt(updated_by);
+      } else {
+        console.warn(`⚠️ User with id ${updated_by} not found. Setting updated_by to null.`);
+      }
+    }
+
     // Create ledger entry in a transaction
     const result = await prisma.$transaction(async (tx) => {
       // Get customer's current balance
       const customerData = await tx.customer.findUnique({
-        where: { cus_id },
+        where: { cus_id: parseInt(cus_id) },
         select: { cus_balance: true }
       });
 
-      const openingBalance = parseFloat(customerData?.cus_balance || 0);
-      const closingBalance = openingBalance + parseFloat(debit_amount) - parseFloat(credit_amount);
+      if (!customerData) {
+        throw new Error('Customer data not found for balance calculation');
+      }
+
+      const openingBalance = parseFloat(customerData.cus_balance || 0);
+      const debitNum = parseFloat(debit_amount || 0);
+      const creditNum = parseFloat(credit_amount || 0);
+      const closingBalance = openingBalance + debitNum - creditNum;
 
       // Create the ledger entry
       const newLedger = await tx.ledger.create({
         data: {
-          cus_id,
+          cus_id: parseInt(cus_id),
           opening_balance: openingBalance,
-          debit_amount: parseFloat(debit_amount),
-          credit_amount: parseFloat(credit_amount),
+          debit_amount: debitNum,
+          credit_amount: creditNum,
           closing_balance: closingBalance,
           bill_no: bill_no ? String(bill_no) : null,
-          trnx_type,
+          trnx_type: trnx_type,
           details: details || null,
-          payments: parseFloat(payments),
-          updated_by: updated_by || null
+          payments: parseFloat(payments || 0),
+          updated_by: validUpdatedBy
         }
       });
 
       // Update customer balance
       await tx.customer.update({
-        where: { cus_id },
+        where: { cus_id: parseInt(cus_id) },
         data: { cus_balance: closingBalance }
       });
 
@@ -161,7 +184,9 @@ export async function POST(request) {
           select: {
             cus_id: true,
             cus_name: true,
-            cus_phone_no: true
+            cus_phone_no: true,
+            cus_category: true,
+            cus_type: true
           }
         },
         updated_by_user: {
@@ -177,7 +202,7 @@ export async function POST(request) {
     return NextResponse.json(completeLedger, { status: 201 });
   } catch (err) {
     console.error('❌ Error creating ledger entry:', err);
-    return errorResponse('Failed to create ledger entry', 500);
+    return errorResponse(`Failed to create ledger entry: ${err.message}`, 500);
   }
 }
 
@@ -187,14 +212,14 @@ export async function POST(request) {
 export async function PUT(request) {
   try {
     const body = await request.json();
-    const { 
+    const {
       id,
-      cus_id, 
-      debit_amount = 0, 
-      credit_amount = 0, 
-      bill_no, 
-      trnx_type, 
-      details, 
+      cus_id,
+      debit_amount = 0,
+      credit_amount = 0,
+      bill_no,
+      trnx_type,
+      details,
       payments = 0,
       updated_by
     } = body;
@@ -274,7 +299,9 @@ export async function PUT(request) {
           select: {
             cus_id: true,
             cus_name: true,
-            cus_phone_no: true
+            cus_phone_no: true,
+            cus_category: true,
+            cus_type: true
           }
         },
         updated_by_user: {
