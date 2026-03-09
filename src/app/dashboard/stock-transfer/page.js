@@ -18,17 +18,19 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Paper,
   Autocomplete,
   Stack,
   Alert,
   Snackbar,
   CircularProgress,
-  InputAdornment
+  InputAdornment,
+  Chip,
+  Divider,
+  Tooltip,
+  Avatar,
 } from '@mui/material';
 import {
   Search as SearchIcon,
-  CalendarToday as CalendarIcon,
   Delete as DeleteIcon,
   Edit as EditIcon,
   Add as AddIcon,
@@ -39,25 +41,28 @@ import {
   Print as PrintIcon,
   Save as SaveIcon,
   Clear as ClearIcon,
-  FilterList as FilterIcon
+  FilterList as FilterIcon,
+  SwapHoriz as SwapIcon,
+  Inventory as InventoryIcon,
+  Store as StoreIcon,
+  ListAlt as ListIcon,
 } from '@mui/icons-material';
 
 export default function StockTransferPage() {
-  // State management
   const [transfers, setTransfers] = useState([]);
   const [stores, setStores] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [currentTransferIndex, setCurrentTransferIndex] = useState(-1);
-  const [currentView, setCurrentView] = useState('list'); // 'list' or 'form'
-  
+  const [currentView, setCurrentView] = useState('list');
+
   // Filter state
   const [searchTerm, setSearchTerm] = useState('');
   const [filterFromStore, setFilterFromStore] = useState('');
   const [filterToStore, setFilterToStore] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  
+
   // Form state
   const [transferNo, setTransferNo] = useState('');
   const [transferDate, setTransferDate] = useState(new Date().toISOString().split('T')[0]);
@@ -69,15 +74,12 @@ export default function StockTransferPage() {
   const [notes, setNotes] = useState('');
   const [transferItems, setTransferItems] = useState([]);
   const [currentStock, setCurrentStock] = useState(null);
-  
-  // Snackbar
-  const [snackbar, setSnackbar] = useState({
-    open: false,
-    message: '',
-    severity: 'success'
-  });
 
-  // Fetch data on mount
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const showSnackbar = (message, severity = 'success') =>
+    setSnackbar({ open: true, message, severity });
+  const handleCloseSnackbar = () => setSnackbar(s => ({ ...s, open: false }));
+
   useEffect(() => {
     fetchStores();
     fetchProducts();
@@ -86,178 +88,109 @@ export default function StockTransferPage() {
 
   const fetchStores = async () => {
     try {
-      const response = await fetch('/api/stores');
-      if (response.ok) {
-        const result = await response.json();
-        // Handle wrapped response { success, data }
-        const storesData = result.success ? result.data : (result.data || result);
-        const storesArray = Array.isArray(storesData) ? storesData : [];
-        setStores(storesArray);
-        console.log(`✅ Loaded ${storesArray.length} stores in dropdown`);
-        if (storesArray.length === 0) {
-          console.warn('No stores found in API response');
-        }
-      } else {
-        console.error('Failed to fetch stores:', response.status);
-        setStores([]);
-      }
-    } catch (error) {
-      console.error('Error fetching stores:', error);
-      setStores([]);
-    }
+      const res = await fetch('/api/stores');
+      if (res.ok) {
+        const result = await res.json();
+        const data = result.success ? result.data : (result.data || result);
+        setStores(Array.isArray(data) ? data : []);
+      } else { setStores([]); }
+    } catch { setStores([]); }
   };
 
   const fetchProducts = async () => {
     try {
-      const response = await fetch('/api/products');
-      if (response.ok) {
-        const result = await response.json();
-        // Handle both wrapped response and direct array
-        const productsData = result.data || result;
-        setProducts(Array.isArray(productsData) ? productsData : []);
-      } else {
-        console.error('Failed to fetch products:', response.status);
-        setProducts([]);
-      }
-    } catch (error) {
-      console.error('Error fetching products:', error);
-      setProducts([]);
-    }
+      const res = await fetch('/api/products');
+      if (res.ok) {
+        const result = await res.json();
+        const data = result.data || result;
+        setProducts(Array.isArray(data) ? data : []);
+      } else { setProducts([]); }
+    } catch { setProducts([]); }
   };
 
   const fetchTransfers = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/stock-transfers');
-      if (response.ok) {
-        const data = await response.json();
+      const res = await fetch('/api/stock-transfers');
+      if (res.ok) {
+        const data = await res.json();
         setTransfers(data);
         if (data.length > 0 && currentTransferIndex === -1) {
           setCurrentTransferIndex(0);
           loadTransfer(data[0]);
         }
       }
-    } catch (error) {
-      console.error('Error fetching transfers:', error);
-      showSnackbar('Error fetching transfers', 'error');
-    } finally {
-      setLoading(false);
-    }
+    } catch { showSnackbar('Error fetching transfers', 'error'); }
+    finally { setLoading(false); }
   };
 
   const loadTransfer = (transfer) => {
     if (!transfer) return;
-    
     setTransferNo(transfer.transfer_no || '');
-    setTransferDate(transfer.transfer_date ? new Date(transfer.transfer_date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
-    const storesArray = Array.isArray(stores) ? stores : [];
-    setFromStore(storesArray.find(s => s?.storeid === transfer.from_store_id) || null);
-    setToStore(storesArray.find(s => s?.storeid === transfer.to_store_id) || null);
+    setTransferDate(
+      transfer.transfer_date
+        ? new Date(transfer.transfer_date).toISOString().split('T')[0]
+        : new Date().toISOString().split('T')[0]
+    );
+    const arr = Array.isArray(stores) ? stores : [];
+    setFromStore(arr.find(s => s?.storeid === transfer.from_store_id) || null);
+    setToStore(arr.find(s => s?.storeid === transfer.to_store_id) || null);
     setNotes(transfer.notes || '');
     setTransferItems(transfer.transfer_details || []);
   };
 
   const handleSearchTransfer = async () => {
-    if (!transferNo.trim()) {
-      showSnackbar('Please enter a transfer number', 'warning');
-      return;
-    }
-
+    if (!transferNo.trim()) { showSnackbar('Please enter a transfer number', 'warning'); return; }
     try {
       setLoading(true);
-      const response = await fetch(`/api/stock-transfers?transfer_no=${transferNo}`);
-      if (response.ok) {
-        const transfer = await response.json();
-        const index = transfers.findIndex(t => t.transfer_id === transfer.transfer_id);
-        if (index !== -1) {
-          setCurrentTransferIndex(index);
-          loadTransfer(transfer);
-          showSnackbar('Transfer found', 'success');
-        } else {
-          loadTransfer(transfer);
-          showSnackbar('Transfer found', 'success');
-        }
-      } else {
-        showSnackbar('Transfer not found', 'error');
-      }
-    } catch (error) {
-      console.error('Error searching transfer:', error);
-      showSnackbar('Error searching transfer', 'error');
-    } finally {
-      setLoading(false);
-    }
+      const res = await fetch(`/api/stock-transfers?transfer_no=${transferNo}`);
+      if (res.ok) {
+        const transfer = await res.json();
+        const idx = transfers.findIndex(t => t.transfer_id === transfer.transfer_id);
+        if (idx !== -1) setCurrentTransferIndex(idx);
+        loadTransfer(transfer);
+        showSnackbar('Transfer found', 'success');
+      } else { showSnackbar('Transfer not found', 'error'); }
+    } catch { showSnackbar('Error searching transfer', 'error'); }
+    finally { setLoading(false); }
   };
 
-  // Fetch stock quantity when product or from store changes
   useEffect(() => {
     const fetchStock = async () => {
-      if (!selectedProduct || !fromStore) {
-        setCurrentStock(null);
-        return;
-      }
-
+      if (!selectedProduct || !fromStore) { setCurrentStock(null); return; }
       try {
-        const response = await fetch(`/api/store-stock?store_id=${fromStore.storeid}&pro_id=${selectedProduct.pro_id}`);
-        if (response.ok) {
-          const result = await response.json();
-          const stockData = result.data || result;
-          if (Array.isArray(stockData) && stockData.length > 0) {
-            setCurrentStock(stockData[0].stock_quantity || 0);
-          } else if (stockData && stockData.stock_quantity !== undefined) {
-            setCurrentStock(stockData.stock_quantity || 0);
-          } else {
-            setCurrentStock(0);
-          }
-        } else {
-          setCurrentStock(0);
-        }
-      } catch (error) {
-        console.error('Error fetching stock:', error);
-        setCurrentStock(0);
-      }
+        const res = await fetch(`/api/store-stock?store_id=${fromStore.storeid}&pro_id=${selectedProduct.pro_id}`);
+        if (res.ok) {
+          const result = await res.json();
+          const data = result.data || result;
+          if (Array.isArray(data) && data.length > 0) {
+            setCurrentStock(data[0].stock_quantity || 0);
+          } else if (data?.stock_quantity !== undefined) {
+            setCurrentStock(data.stock_quantity || 0);
+          } else { setCurrentStock(0); }
+        } else { setCurrentStock(0); }
+      } catch { setCurrentStock(0); }
     };
-
     fetchStock();
   }, [selectedProduct, fromStore]);
 
   const handleAddProduct = () => {
-    if (!selectedProduct) {
-      showSnackbar('Please select a product', 'warning');
-      return;
-    }
-
-    if (!quantity || parseFloat(quantity) <= 0) {
-      showSnackbar('Please enter a valid quantity', 'warning');
-      return;
-    }
-
-    // Check if product already exists
-    const existingIndex = transferItems.findIndex(item => item.pro_id === selectedProduct.pro_id);
-    
-    if (existingIndex !== -1) {
-      // Update existing item
-      const updatedItems = [...transferItems];
-      updatedItems[existingIndex] = {
-        ...updatedItems[existingIndex],
-        quantity: parseFloat(quantity),
-        packing: parseFloat(packing || 0)
-      };
-      setTransferItems(updatedItems);
+    if (!selectedProduct) { showSnackbar('Please select a product', 'warning'); return; }
+    if (!quantity || parseFloat(quantity) <= 0) { showSnackbar('Please enter a valid quantity', 'warning'); return; }
+    const existingIdx = transferItems.findIndex(item => item.pro_id === selectedProduct.pro_id);
+    if (existingIdx !== -1) {
+      const updated = [...transferItems];
+      updated[existingIdx] = { ...updated[existingIdx], quantity: parseFloat(quantity), packing: parseFloat(packing || 0) };
+      setTransferItems(updated);
     } else {
-      // Add new item
-      setTransferItems([
-        ...transferItems,
-        {
-          transfer_detail_id: Date.now(), // Temporary ID
-          pro_id: selectedProduct.pro_id,
-          product: selectedProduct,
-          quantity: parseFloat(quantity),
-          packing: parseFloat(packing || 0)
-        }
-      ]);
+      setTransferItems([...transferItems, {
+        transfer_detail_id: Date.now(),
+        pro_id: selectedProduct.pro_id,
+        product: selectedProduct,
+        quantity: parseFloat(quantity),
+        packing: parseFloat(packing || 0),
+      }]);
     }
-
-    // Reset form
     setSelectedProduct(null);
     setQuantity('');
     setPacking('0');
@@ -269,78 +202,45 @@ export default function StockTransferPage() {
   };
 
   const handleSave = async () => {
-    if (!transferDate) {
-      showSnackbar('Please select a date', 'warning');
-      return;
-    }
-
-    if (!fromStore) {
-      showSnackbar('Please select from store', 'warning');
-      return;
-    }
-
-    if (!toStore) {
-      showSnackbar('Please select to store', 'warning');
-      return;
-    }
-
-    if (fromStore.storeid === toStore.storeid) {
-      showSnackbar('From store and to store cannot be the same', 'error');
-      return;
-    }
-
-    if (transferItems.length === 0) {
-      showSnackbar('Please add at least one product', 'warning');
-      return;
-    }
+    if (!transferDate) { showSnackbar('Please select a date', 'warning'); return; }
+    if (!fromStore) { showSnackbar('Please select from store', 'warning'); return; }
+    if (!toStore) { showSnackbar('Please select to store', 'warning'); return; }
+    if (fromStore.storeid === toStore.storeid) { showSnackbar('From and To store cannot be the same', 'error'); return; }
+    if (transferItems.length === 0) { showSnackbar('Please add at least one product', 'warning'); return; }
 
     try {
       setLoading(true);
-      const transferData = {
+      const currentTransfer = transfers[currentTransferIndex];
+      const method = currentTransfer?.transfer_id ? 'PUT' : 'POST';
+      const body = {
         transfer_date: transferDate,
         from_store_id: fromStore.storeid,
         to_store_id: toStore.storeid,
-        notes: notes,
+        notes,
         transfer_details: transferItems.map(item => ({
           pro_id: item.pro_id,
           quantity: item.quantity,
-          packing: item.packing || 0
+          packing: item.packing || 0,
         })),
-        updated_by: 1 // TODO: Get from auth context
+        updated_by: 1,
+        ...(currentTransfer?.transfer_id && { transfer_id: currentTransfer.transfer_id }),
       };
-
-      // If we have a transfer_id, it's an update
-      const currentTransfer = transfers[currentTransferIndex];
-      const url = currentTransfer?.transfer_id 
-        ? `/api/stock-transfers` 
-        : '/api/stock-transfers';
-      const method = currentTransfer?.transfer_id ? 'PUT' : 'POST';
-
-      const body = currentTransfer?.transfer_id 
-        ? { ...transferData, transfer_id: currentTransfer.transfer_id }
-        : transferData;
-
-      const response = await fetch(url, {
+      const res = await fetch('/api/stock-transfers', {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
       });
-
-      if (response.ok) {
+      if (res.ok) {
         showSnackbar('Transfer saved successfully', 'success');
         await fetchTransfers();
-        setCurrentView('list'); // Go back to list view after saving
+        setCurrentView('list');
         handleNew();
       } else {
-        const error = await response.json();
-        showSnackbar(error.error || 'Failed to save transfer', 'error');
+        const err = await res.json();
+        showSnackbar(err.error || 'Failed to save transfer', 'error');
       }
-    } catch (error) {
-      console.error('Error saving transfer:', error);
-      showSnackbar('Error saving transfer', 'error');
-    } finally {
-      setLoading(false);
-    }
+    } catch { showSnackbar('Error saving transfer', 'error'); }
+    finally { setLoading(false); }
   };
 
   const handleNew = () => {
@@ -358,297 +258,281 @@ export default function StockTransferPage() {
   };
 
   const handleEditTransfer = (transfer) => {
-    const index = transfers.findIndex(t => t.transfer_id === transfer.transfer_id);
-    if (index !== -1) {
-      setCurrentTransferIndex(index);
-      loadTransfer(transfer);
-      setCurrentView('form');
-    }
+    const idx = transfers.findIndex(t => t.transfer_id === transfer.transfer_id);
+    if (idx !== -1) { setCurrentTransferIndex(idx); loadTransfer(transfer); setCurrentView('form'); }
   };
 
-  const handleViewList = () => {
-    setCurrentView('list');
-    fetchTransfers();
-  };
+  const handleViewList = () => { setCurrentView('list'); fetchTransfers(); };
 
   const handleCancel = () => {
     if (currentTransferIndex !== -1 && transfers[currentTransferIndex]) {
       loadTransfer(transfers[currentTransferIndex]);
-    } else {
-      handleNew();
-    }
+    } else { handleNew(); }
   };
 
-  // Navigation handlers
-  const handleFirst = () => {
-    if (transfers.length > 0) {
-      setCurrentTransferIndex(0);
-      loadTransfer(transfers[0]);
-    }
-  };
+  const handleFirst    = () => { if (transfers.length > 0) { setCurrentTransferIndex(0); loadTransfer(transfers[0]); } };
+  const handlePrevious = () => { if (currentTransferIndex > 0) { const i = currentTransferIndex - 1; setCurrentTransferIndex(i); loadTransfer(transfers[i]); } };
+  const handleNext     = () => { if (currentTransferIndex < transfers.length - 1) { const i = currentTransferIndex + 1; setCurrentTransferIndex(i); loadTransfer(transfers[i]); } };
+  const handleLast     = () => { if (transfers.length > 0) { const i = transfers.length - 1; setCurrentTransferIndex(i); loadTransfer(transfers[i]); } };
 
-  const handlePrevious = () => {
-    if (currentTransferIndex > 0) {
-      const newIndex = currentTransferIndex - 1;
-      setCurrentTransferIndex(newIndex);
-      loadTransfer(transfers[newIndex]);
-    }
-  };
-
-  const handleNext = () => {
-    if (currentTransferIndex < transfers.length - 1) {
-      const newIndex = currentTransferIndex + 1;
-      setCurrentTransferIndex(newIndex);
-      loadTransfer(transfers[newIndex]);
-    }
-  };
-
-  const handleLast = () => {
-    if (transfers.length > 0) {
-      const lastIndex = transfers.length - 1;
-      setCurrentTransferIndex(lastIndex);
-      loadTransfer(transfers[lastIndex]);
-    }
-  };
-
-  const showSnackbar = (message, severity) => {
-    setSnackbar({ open: true, message, severity });
-  };
-
-  const handleCloseSnackbar = () => {
-    setSnackbar({ ...snackbar, open: false });
-  };
-
-  // Filter transfers based on search criteria
   const filteredTransfers = useMemo(() => {
-    if (!Array.isArray(transfers) || transfers.length === 0) {
-      return [];
-    }
-
-    return transfers.filter(transfer => {
-      // Search filter - by transfer no or notes
-      const matchesSearch = searchTerm === '' || 
-        (transfer.transfer_no && transfer.transfer_no.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (transfer.notes && transfer.notes.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (transfer.transfer_id && transfer.transfer_id.toString().includes(searchTerm));
-
-      // From Store filter
-      const matchesFromStore = filterFromStore === '' || 
-        (transfer.from_store?.storeid?.toString() === filterFromStore) ||
-        (transfer.from_store_id?.toString() === filterFromStore);
-
-      // To Store filter
-      const matchesToStore = filterToStore === '' || 
-        (transfer.to_store?.storeid?.toString() === filterToStore) ||
-        (transfer.to_store_id?.toString() === filterToStore);
-
-      // Date range filters
-      const matchesDateFrom = dateFrom === '' || 
-        (transfer.transfer_date && new Date(transfer.transfer_date) >= new Date(dateFrom));
-
-      const matchesDateTo = dateTo === '' || 
-        (transfer.transfer_date && new Date(transfer.transfer_date) <= new Date(dateTo));
-
-      return matchesSearch && matchesFromStore && matchesToStore && 
-             matchesDateFrom && matchesDateTo;
+    if (!Array.isArray(transfers)) return [];
+    return transfers.filter(t => {
+      const matchesSearch = searchTerm === '' ||
+        (t.transfer_no && t.transfer_no.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (t.notes && t.notes.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (t.transfer_id && t.transfer_id.toString().includes(searchTerm));
+      const matchesFrom = filterFromStore === '' ||
+        t.from_store?.storeid?.toString() === filterFromStore ||
+        t.from_store_id?.toString() === filterFromStore;
+      const matchesTo = filterToStore === '' ||
+        t.to_store?.storeid?.toString() === filterToStore ||
+        t.to_store_id?.toString() === filterToStore;
+      const matchesFrom_d = dateFrom === '' || (t.transfer_date && new Date(t.transfer_date) >= new Date(dateFrom));
+      const matchesTo_d   = dateTo   === '' || (t.transfer_date && new Date(t.transfer_date) <= new Date(dateTo));
+      return matchesSearch && matchesFrom && matchesTo && matchesFrom_d && matchesTo_d;
     });
   }, [transfers, searchTerm, filterFromStore, filterToStore, dateFrom, dateTo]);
 
-  // Render List View
-  const renderListView = () => (
-    <DashboardLayout>
-      <Container maxWidth="xl" sx={{ py: 2 }}>
-        <Stack spacing={3}>
-          {/* Header */}
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="h5" sx={{ fontWeight: 'bold', color: 'text.primary' }}>
-              Stock Transfers
-            </Typography>
-            <Button
-              variant="contained"
-              startIcon={<AddIcon />}
-              onClick={handleNew}
-              sx={{
-                bgcolor: '#9c27b0',
-                '&:hover': { bgcolor: '#7b1fa2' }
-              }}
-            >
-              New Transfer
-            </Button>
-          </Box>
+  const clearFilters = () => {
+    setSearchTerm(''); setFilterFromStore(''); setFilterToStore(''); setDateFrom(''); setDateTo('');
+  };
 
-          {/* Filter Section */}
-          <Card>
-            <CardContent>
-              <Typography variant="h6" sx={{ mb: 2, fontWeight: 'semibold', display: 'flex', alignItems: 'center', gap: 1 }}>
-                <FilterIcon />
-                Filter Transfers
-              </Typography>
-              <Grid container spacing={2} alignItems="center">
-                <Grid item xs={12} sm={6} md={2.4}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    label="Search"
-                    placeholder="Search by Transfer No, Notes, or ID"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <SearchIcon />
-                        </InputAdornment>
-                      ),
-                    }}
-                  />
-                </Grid>
-                <Grid item xs={12} sm={6} md={2.4}>
-                  <Autocomplete
-                    fullWidth
-                    size="small"
-                    options={Array.isArray(stores) ? stores : []}
-                    getOptionLabel={(option) => option?.store_name || ''}
-                    value={stores.find(s => s?.storeid?.toString() === filterFromStore) || null}
-                    onChange={(event, newValue) => {
-                      setFilterFromStore(newValue ? newValue.storeid.toString() : '');
-                    }}
-                    isOptionEqualToValue={(option, value) => option?.storeid === value?.storeid}
-                    renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        label="From Store"
-                        placeholder="Select from store"
-                        sx={{ minWidth: 150 }}
-                      />
-                    )}
-                    sx={{ minWidth: 150 }}
-                  />
-                </Grid>
-                <Grid item xs={12} sm={6} md={2.4}>
-                  <Autocomplete
-                    fullWidth
-                    size="small"
-                    options={Array.isArray(stores) ? stores : []}
-                    getOptionLabel={(option) => option?.store_name || ''}
-                    value={stores.find(s => s?.storeid?.toString() === filterToStore) || null}
-                    onChange={(event, newValue) => {
-                      setFilterToStore(newValue ? newValue.storeid.toString() : '');
-                    }}
-                    isOptionEqualToValue={(option, value) => option?.storeid === value?.storeid}
-                    renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        label="To Store"
-                        placeholder="Select to store"
-                        sx={{ minWidth: 150 }}
-                      />
-                    )}
-                    sx={{ minWidth: 150 }}
-                  />
-                </Grid>
-                <Grid item xs={12} sm={6} md={2.4}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    type="date"
-                    label="From Date"
-                    value={dateFrom}
-                    onChange={(e) => setDateFrom(e.target.value)}
-                    InputLabelProps={{ shrink: true }}
-                  />
-                </Grid>
-                <Grid item xs={12} sm={6} md={2.4}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    type="date"
-                    label="To Date"
-                    value={dateTo}
-                    onChange={(e) => setDateTo(e.target.value)}
-                    InputLabelProps={{ shrink: true }}
-                  />
-                </Grid>
-              </Grid>
-              <Box sx={{ mt: 2, display: 'flex', gap: 1, alignItems: 'center' }}>
-                <Button
-                  variant="outlined"
-                  size="small"
-                  onClick={() => {
-                    setSearchTerm('');
-                    setFilterFromStore('');
-                    setFilterToStore('');
-                    setDateFrom('');
-                    setDateTo('');
-                  }}
-                  startIcon={<ClearIcon />}
-                >
-                  Clear Filters
-                </Button>
-                <Typography variant="body2" color="text.secondary" sx={{ ml: 2 }}>
-                  Showing {filteredTransfers.length} of {transfers.length} transfers
+  // ─── Snackbar (shared) ────────────────────────────────────────────────────
+  const SnackbarEl = (
+    <Snackbar
+      open={snackbar.open}
+      autoHideDuration={4000}
+      onClose={handleCloseSnackbar}
+      anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+    >
+      <Alert onClose={handleCloseSnackbar} severity={snackbar.severity} variant="filled" sx={{ width: '100%' }}>
+        {snackbar.message}
+      </Alert>
+    </Snackbar>
+  );
+
+  // ─── UNIQUE STORES ────────────────────────────────────────────────────────
+  const fromStoreCount = new Set(transfers.map(t => t.from_store_id).filter(Boolean)).size;
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // LIST VIEW
+  // ═════════════════════════════════════════════════════════════════════════
+  if (currentView === 'list') {
+    return (
+      <DashboardLayout>
+        <Container maxWidth={false} sx={{ py: 4 }}>
+          <Stack spacing={4}>
+
+            {/* Header */}
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Box>
+                <Typography variant="h4" component="h1" sx={{ fontWeight: 'bold', color: 'text.primary' }}>
+                  Stock Transfers
+                </Typography>
+                <Typography variant="body1" color="text.secondary" sx={{ mt: 0.5 }}>
+                  Manage inventory transfers between stores
                 </Typography>
               </Box>
-            </CardContent>
-          </Card>
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={handleNew}
+                sx={{
+                  background: 'linear-gradient(45deg, #9C27B0 30%, #E91E63 90%)',
+                  boxShadow: '0 3px 5px 2px rgba(156,39,176,.3)',
+                  '&:hover': { background: 'linear-gradient(45deg, #7B1FA2 30%, #C2185B 90%)', transform: 'scale(1.03)' },
+                  transition: 'all 0.2s ease-in-out',
+                }}
+              >
+                New Transfer
+              </Button>
+            </Box>
 
-          {/* Transfers Table */}
-          <Card>
-            <CardContent>
-              <TableContainer component={Paper}>
-                <Table>
+            {/* Stats Cards */}
+            <Grid container spacing={3}>
+              {[
+                { label: 'Total Transfers', value: transfers.length, icon: <SwapIcon />, gradient: 'linear-gradient(45deg, #9C27B0 30%, #E91E63 90%)' },
+                { label: 'Filtered Results', value: filteredTransfers.length, icon: <ListIcon />, gradient: 'linear-gradient(45deg, #2196F3 30%, #21CBF3 90%)' },
+                { label: 'Source Stores', value: fromStoreCount, icon: <StoreIcon />, gradient: 'linear-gradient(45deg, #4CAF50 30%, #8BC34A 90%)' },
+                { label: 'Total Products', value: transfers.reduce((s, t) => s + (t.transfer_details?.length || 0), 0), icon: <InventoryIcon />, gradient: 'linear-gradient(45deg, #FF9800 30%, #F44336 90%)' },
+              ].map((stat) => (
+                <Grid item xs={12} sm={6} md={3} key={stat.label}>
+                  <Card sx={{ background: stat.gradient, color: 'white' }}>
+                    <CardContent>
+                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                        <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', mr: 2 }}>{stat.icon}</Avatar>
+                        <Box>
+                          <Typography variant="body2" sx={{ opacity: 0.85 }}>{stat.label}</Typography>
+                          <Typography variant="h5" sx={{ fontWeight: 'bold' }}>{stat.value}</Typography>
+                        </Box>
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+
+            {/* Filters */}
+            <Card>
+              <CardContent sx={{ p: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <FilterIcon color="action" />
+                    <Typography variant="h6" sx={{ fontWeight: 600 }}>Filter Transfers</Typography>
+                  </Box>
+                  <Button size="small" onClick={clearFilters} startIcon={<ClearIcon />}>
+                    Clear All
+                  </Button>
+                </Box>
+                <Grid container spacing={2}>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <TextField
+                      fullWidth size="small" label="Search"
+                      placeholder="Transfer No, Notes, or ID…"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      sx={{ minWidth: 200 }}
+                      InputProps={{
+                        startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>,
+                      }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <Autocomplete
+                      fullWidth size="small"
+                      options={Array.isArray(stores) ? stores : []}
+                      getOptionLabel={(o) => o?.store_name || ''}
+                      value={stores.find(s => s?.storeid?.toString() === filterFromStore) || null}
+                      onChange={(_, v) => setFilterFromStore(v ? v.storeid.toString() : '')}
+                      isOptionEqualToValue={(o, v) => o?.storeid === v?.storeid}
+                      renderInput={(params) => <TextField {...params} label="From Store" sx={{ minWidth: 200 }} />}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <Autocomplete
+                      fullWidth size="small"
+                      options={Array.isArray(stores) ? stores : []}
+                      getOptionLabel={(o) => o?.store_name || ''}
+                      value={stores.find(s => s?.storeid?.toString() === filterToStore) || null}
+                      onChange={(_, v) => setFilterToStore(v ? v.storeid.toString() : '')}
+                      isOptionEqualToValue={(o, v) => o?.storeid === v?.storeid}
+                      renderInput={(params) => <TextField {...params} label="To Store" sx={{ minWidth: 200 }} />}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <TextField
+                      fullWidth size="small" type="date" label="From Date"
+                      value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+                      InputLabelProps={{ shrink: true }}
+                      sx={{ minWidth: 200 }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <TextField
+                      fullWidth size="small" type="date" label="To Date"
+                      value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+                      InputLabelProps={{ shrink: true }}
+                      sx={{ minWidth: 200 }}
+                    />
+                  </Grid>
+                </Grid>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
+                  Showing {filteredTransfers.length} of {transfers.length} transfers
+                </Typography>
+              </CardContent>
+            </Card>
+
+            {/* Table */}
+            <Card>
+              <Box sx={{ px: 3, py: 2, borderBottom: 1, borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="h6" sx={{ fontWeight: 600 }}>Transfer Records</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {filteredTransfers.length} records
+                </Typography>
+              </Box>
+              <TableContainer>
+                <Table sx={{ minWidth: 750 }}>
                   <TableHead>
-                    <TableRow sx={{ bgcolor: '#f5f5f5' }}>
-                      <TableCell sx={{ fontWeight: 'bold' }}>Transfer No</TableCell>
-                      <TableCell sx={{ fontWeight: 'bold' }}>Date</TableCell>
-                      <TableCell sx={{ fontWeight: 'bold' }}>From Store</TableCell>
-                      <TableCell sx={{ fontWeight: 'bold' }}>To Store</TableCell>
-                      <TableCell sx={{ fontWeight: 'bold' }} align="right">Items</TableCell>
-                      <TableCell sx={{ fontWeight: 'bold' }}>Notes</TableCell>
-                      <TableCell sx={{ fontWeight: 'bold' }} align="center">Actions</TableCell>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100' }}>Transfer No</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100' }}>Date</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100' }}>From Store</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100' }}>To Store</TableCell>
+                      <TableCell align="center" sx={{ fontWeight: 'bold', bgcolor: 'grey.100' }}>Items</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100' }}>Notes</TableCell>
+                      <TableCell align="center" sx={{ fontWeight: 'bold', bgcolor: 'grey.100' }}>Actions</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {loading ? (
                       <TableRow>
-                        <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
+                        <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
                           <CircularProgress />
                         </TableCell>
                       </TableRow>
                     ) : filteredTransfers.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
-                          {transfers.length === 0 ? 'No stock transfers found' : 'No transfers match your filters'}
+                        <TableCell colSpan={7} align="center">
+                          <Box sx={{ py: 8, textAlign: 'center' }}>
+                            <SwapIcon sx={{ fontSize: 64, color: 'text.disabled', mb: 2 }} />
+                            <Typography variant="h6" color="text.secondary" gutterBottom>
+                              {transfers.length === 0 ? 'No stock transfers found' : 'No transfers match your filters'}
+                            </Typography>
+                            <Typography variant="body2" color="text.disabled">
+                              {transfers.length === 0 ? 'Create your first transfer to get started.' : 'Try adjusting your filter criteria.'}
+                            </Typography>
+                          </Box>
                         </TableCell>
                       </TableRow>
                     ) : (
                       filteredTransfers.map((transfer) => (
-                        <TableRow key={transfer.transfer_id} hover>
-                          <TableCell>{transfer.transfer_no || `#${transfer.transfer_id}`}</TableCell>
+                        <TableRow key={transfer.transfer_id} sx={{ '&:hover': { bgcolor: 'grey.50' } }}>
                           <TableCell>
-                            {transfer.transfer_date 
-                              ? new Date(transfer.transfer_date).toLocaleDateString('en-GB')
-                              : 'N/A'}
-                          </TableCell>
-                          <TableCell>{transfer.from_store?.store_name || 'N/A'}</TableCell>
-                          <TableCell>{transfer.to_store?.store_name || 'N/A'}</TableCell>
-                          <TableCell align="right">
-                            {transfer.transfer_details?.length || 0}
+                            <Chip
+                              label={transfer.transfer_no || `#${transfer.transfer_id}`}
+                              size="small"
+                              color="secondary"
+                              variant="outlined"
+                            />
                           </TableCell>
                           <TableCell>
-                            {transfer.notes ? (
-                              <Typography variant="body2" sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {transfer.notes}
-                              </Typography>
-                            ) : '-'}
+                            <Typography variant="body2">
+                              {transfer.transfer_date
+                                ? new Date(transfer.transfer_date).toLocaleDateString('en-GB')
+                                : '—'}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                              <StoreIcon fontSize="small" color="action" />
+                              <Typography variant="body2">{transfer.from_store?.store_name || '—'}</Typography>
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                              <StoreIcon fontSize="small" color="action" />
+                              <Typography variant="body2">{transfer.to_store?.store_name || '—'}</Typography>
+                            </Box>
                           </TableCell>
                           <TableCell align="center">
-                            <IconButton
+                            <Chip
+                              label={transfer.transfer_details?.length || 0}
                               size="small"
                               color="primary"
-                              onClick={() => handleEditTransfer(transfer)}
-                            >
-                              <EditIcon fontSize="small" />
-                            </IconButton>
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {transfer.notes || '—'}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="center">
+                            <Tooltip title="Edit Transfer">
+                              <IconButton size="small" color="primary" onClick={() => handleEditTransfer(transfer)}>
+                                <EditIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
                           </TableCell>
                         </TableRow>
                       ))
@@ -656,398 +540,351 @@ export default function StockTransferPage() {
                   </TableBody>
                 </Table>
               </TableContainer>
-            </CardContent>
-          </Card>
+            </Card>
 
-          {/* Snackbar */}
-          <Snackbar
-            open={snackbar.open}
-            autoHideDuration={6000}
-            onClose={handleCloseSnackbar}
-            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-          >
-            <Alert
-              onClose={handleCloseSnackbar}
-              severity={snackbar.severity}
-              variant="filled"
-              sx={{ width: '100%' }}
-            >
-              {snackbar.message}
-            </Alert>
-          </Snackbar>
-        </Stack>
-      </Container>
-    </DashboardLayout>
-  );
+          </Stack>
+        </Container>
+        {SnackbarEl}
+      </DashboardLayout>
+    );
+  }
 
-  // Render Form View
-  const renderFormView = () => (
+  // ═════════════════════════════════════════════════════════════════════════
+  // FORM VIEW
+  // ═════════════════════════════════════════════════════════════════════════
+  return (
     <DashboardLayout>
-      <Container maxWidth="xl" sx={{ py: 2 }}>
+      <Container maxWidth={false} sx={{ py: 4 }}>
         <Stack spacing={3}>
+
           {/* Header */}
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="h5" sx={{ fontWeight: 'bold', color: 'text.primary' }}>
-              Stock Transfer
-            </Typography>
-            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-              <Button
-                variant="outlined"
-                onClick={handleViewList}
-                sx={{ mr: 1 }}
-              >
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
+            <Box>
+              <Typography variant="h4" component="h1" sx={{ fontWeight: 'bold', color: 'text.primary' }}>
+                {currentTransferIndex === -1 ? 'New Stock Transfer' : `Transfer: ${transferNo || `#${transfers[currentTransferIndex]?.transfer_id || ''}`}`}
+              </Typography>
+              {transfers.length > 0 && currentTransferIndex !== -1 && (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                  Record {currentTransferIndex + 1} of {transfers.length}
+                </Typography>
+              )}
+            </Box>
+            <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
+              <Button variant="outlined" startIcon={<ListIcon />} onClick={handleViewList}>
                 View List
               </Button>
               <TextField
                 size="small"
-                placeholder="Transfer No"
+                label="Transfer No"
                 value={transferNo}
                 onChange={(e) => setTransferNo(e.target.value)}
-                sx={{ width: 200, bgcolor: 'white' }}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearchTransfer()}
+                sx={{ width: 180 }}
                 InputProps={{
                   endAdornment: (
                     <InputAdornment position="end">
-                      <IconButton
-                        size="small"
-                        onClick={handleSearchTransfer}
-                        sx={{ color: 'primary.main' }}
-                      >
-                        <SearchIcon />
-                      </IconButton>
+                      <Tooltip title="Search">
+                        <IconButton size="small" onClick={handleSearchTransfer}>
+                          <SearchIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
                     </InputAdornment>
-                  )
+                  ),
                 }}
               />
-              <Button
-                variant="contained"
-                startIcon={<SearchIcon />}
-                onClick={handleSearchTransfer}
-                sx={{
-                  bgcolor: '#9c27b0',
-                  '&:hover': { bgcolor: '#7b1fa2' }
-                }}
-              >
-                Find
-              </Button>
             </Box>
           </Box>
 
           {/* Transfer Details Card */}
           <Card>
             <CardContent>
+              <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
+                Transfer Details
+              </Typography>
               <Grid container spacing={3}>
-                {/* Date */}
-                <Grid item xs={12} md={3}>
-                  <Typography variant="body2" sx={{ mb: 1, fontWeight: 'medium' }}>
-                    DATE:
-                  </Typography>
+                <Grid item xs={12} sm={4} md={3}>
                   <TextField
                     fullWidth
                     type="date"
+                    label="Transfer Date"
                     value={transferDate}
                     onChange={(e) => setTransferDate(e.target.value)}
-                    sx={{ bgcolor: 'white' }}
-                    InputProps={{
-                      endAdornment: (
-                        <InputAdornment position="end">
-                          <CalendarIcon sx={{ color: 'text.secondary' }} />
-                        </InputAdornment>
-                      )
-                    }}
+                    InputLabelProps={{ shrink: true }}
+                    sx={{ minWidth: 200 }}
                   />
                 </Grid>
-
-                {/* From Store */}
-                <Grid item xs={12} md={4}>
-                  <Typography variant="body2" sx={{ mb: 1, fontWeight: 'medium' }}>
-                    SELECT FROM STORE:
-                  </Typography>
+                <Grid item xs={12} sm={4} md={4}>
                   <Autocomplete
+                    fullWidth
                     options={Array.isArray(stores) ? stores : []}
-                    getOptionLabel={(option) => option?.store_name || ''}
+                    getOptionLabel={(o) => o?.store_name || ''}
                     value={fromStore}
-                    onChange={(e, newValue) => setFromStore(newValue)}
-                    isOptionEqualToValue={(option, value) => option?.storeid === value?.storeid}
+                    onChange={(_, v) => setFromStore(v)}
+                    isOptionEqualToValue={(o, v) => o?.storeid === v?.storeid}
                     renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        placeholder="Select from store"
-                        sx={{ bgcolor: 'white', minWidth: 250 }}
-                      />
+                      <TextField {...params} label="From Store" placeholder="Select source store" sx={{ minWidth: 200 }} />
                     )}
-                    sx={{ minWidth: 250 }}
                   />
                 </Grid>
-
-                {/* To Store */}
-                <Grid item xs={12} md={4}>
-                  <Typography variant="body2" sx={{ mb: 1, fontWeight: 'medium' }}>
-                    SELECT TO STORE:
-                  </Typography>
+                <Grid item xs={12} sm={4} md={4}>
                   <Autocomplete
+                    fullWidth
                     options={Array.isArray(stores) ? stores : []}
-                    getOptionLabel={(option) => option?.store_name || ''}
+                    getOptionLabel={(o) => o?.store_name || ''}
                     value={toStore}
-                    onChange={(e, newValue) => setToStore(newValue)}
-                    isOptionEqualToValue={(option, value) => option?.storeid === value?.storeid}
+                    onChange={(_, v) => setToStore(v)}
+                    isOptionEqualToValue={(o, v) => o?.storeid === v?.storeid}
                     renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        placeholder="Select to store"
-                        sx={{ bgcolor: 'white', minWidth: 250 }}
-                      />
+                      <TextField {...params} label="To Store" placeholder="Select destination store" sx={{ minWidth: 200 }} />
                     )}
-                    sx={{ minWidth: 250 }}
                   />
                 </Grid>
               </Grid>
+            </CardContent>
+          </Card>
 
-              {/* Product Selection */}
-              <Box sx={{ mt: 4 }}>
-                {selectedProduct && fromStore && currentStock !== null && (
-                  <Typography variant="body2" sx={{ mb: 1, color: 'text.primary', fontWeight: 'medium' }}>
-                    Available Stock: <strong style={{ color: '#1976d2' }}>{currentStock}</strong>
-                  </Typography>
-                )}
-                <Grid container spacing={2} alignItems="flex-end">
-                  <Grid item xs={12} md={4}>
-                    <Typography variant="body2" sx={{ mb: 1, fontWeight: 'medium' }}>
-                      SELECT PRODUCT:
-                    </Typography>
-                    <Autocomplete
-                      options={Array.isArray(products) ? products : []}
-                      getOptionLabel={(option) => option?.pro_title || ''}
-                      value={selectedProduct}
-                      onChange={(e, newValue) => {
-                        setSelectedProduct(newValue);
-                        setCurrentStock(null);
-                      }}
-                      isOptionEqualToValue={(option, value) => option?.pro_id === value?.pro_id}
-                      renderInput={(params) => (
-                        <TextField
-                          {...params}
-                          placeholder="Select product"
-                          sx={{ bgcolor: 'white', minWidth: 350 }}
-                        />
-                      )}
-                      sx={{ minWidth: 350 }}
-                    />
-                  </Grid>
-                  <Grid item xs={12} md={2}>
-                    <Typography variant="body2" sx={{ mb: 1, fontWeight: 'medium' }}>
-                      QTY:
-                    </Typography>
-                    <TextField
-                      fullWidth
-                      type="number"
-                      value={quantity}
-                      onChange={(e) => setQuantity(e.target.value)}
-                      placeholder="0"
-                      sx={{ bgcolor: 'white' }}
-                    />
-                  </Grid>
-                  <Grid item xs={12} md={2}>
-                    <Typography variant="body2" sx={{ mb: 1, fontWeight: 'medium' }}>
-                      PACKING:
-                    </Typography>
-                    <TextField
-                      fullWidth
-                      type="number"
-                      value={packing}
-                      onChange={(e) => setPacking(e.target.value)}
-                      placeholder="0"
-                      sx={{ bgcolor: 'white' }}
-                    />
-                  </Grid>
-                  <Grid item xs={12} md={2}>
-                    <Button
-                      fullWidth
-                      variant="contained"
-                      startIcon={<AddIcon />}
-                      onClick={handleAddProduct}
-                      sx={{
-                        bgcolor: '#9c27b0',
-                        '&:hover': { bgcolor: '#7b1fa2' },
-                        height: '56px'
-                      }}
-                    >
-                      + Add
-                    </Button>
-                  </Grid>
+          {/* Add Product Card */}
+          <Card>
+            <CardContent>
+              <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
+                Add Products
+              </Typography>
+
+              {/* Stock badge */}
+              {selectedProduct && fromStore && currentStock !== null && (
+                <Box sx={{ mb: 2 }}>
+                  <Chip
+                    icon={<InventoryIcon />}
+                    label={`Available Stock: ${currentStock}`}
+                    color={currentStock > 0 ? 'success' : 'error'}
+                    variant="outlined"
+                  />
+                </Box>
+              )}
+
+              <Grid container spacing={2} alignItems="flex-end">
+                <Grid item xs={12} md={5}>
+                  <Autocomplete
+                    fullWidth
+                    options={Array.isArray(products) ? products : []}
+                    getOptionLabel={(o) => o?.pro_title || ''}
+                    value={selectedProduct}
+                    onChange={(_, v) => { setSelectedProduct(v); setCurrentStock(null); }}
+                    isOptionEqualToValue={(o, v) => o?.pro_id === v?.pro_id}
+                    renderInput={(params) => (
+                      <TextField {...params} label="Select Product" placeholder="Search product…" sx={{ minWidth: 200 }} />
+                    )}
+                  />
                 </Grid>
-              </Box>
+                <Grid item xs={6} md={2}>
+                  <TextField
+                    fullWidth
+                    label="Quantity"
+                    type="number"
+                    value={quantity}
+                    onChange={(e) => setQuantity(e.target.value)}
+                    inputProps={{ min: 0, step: 1 }}
+                    placeholder="0"
+                    sx={{ minWidth: 120 }}
+                  />
+                </Grid>
+                <Grid item xs={6} md={2}>
+                  <TextField
+                    fullWidth
+                    label="Packing"
+                    type="number"
+                    value={packing}
+                    onChange={(e) => setPacking(e.target.value)}
+                    inputProps={{ min: 0, step: 1 }}
+                    placeholder="0"
+                    sx={{ minWidth: 120 }}
+                  />
+                </Grid>
+                <Grid item xs={12} md={3}>
+                  <Button
+                    fullWidth
+                    variant="contained"
+                    startIcon={<AddIcon />}
+                    onClick={handleAddProduct}
+                    sx={{
+                      height: 56,
+                      background: 'linear-gradient(45deg, #9C27B0 30%, #E91E63 90%)',
+                      '&:hover': { background: 'linear-gradient(45deg, #7B1FA2 30%, #C2185B 90%)' },
+                    }}
+                  >
+                    Add Product
+                  </Button>
+                </Grid>
+              </Grid>
 
-              {/* Product Transfer Table */}
-              <Box sx={{ mt: 4 }}>
-                <TableContainer component={Paper} variant="outlined">
-                  <Table>
-                    <TableHead>
-                      <TableRow sx={{ bgcolor: '#f5f5f5' }}>
-                        <TableCell sx={{ fontWeight: 'bold' }}>Product</TableCell>
-                        <TableCell sx={{ fontWeight: 'bold' }} align="right">Qty</TableCell>
-                        <TableCell sx={{ fontWeight: 'bold' }} align="right">Packing</TableCell>
-                        <TableCell sx={{ fontWeight: 'bold' }} align="center">Actions</TableCell>
+              <Divider sx={{ my: 3 }} />
+
+              {/* Items Table */}
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100' }}>#</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100' }}>Product</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 'bold', bgcolor: 'grey.100' }}>Qty</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 'bold', bgcolor: 'grey.100' }}>Packing</TableCell>
+                      <TableCell align="center" sx={{ fontWeight: 'bold', bgcolor: 'grey.100' }}>Remove</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {transferItems.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} align="center">
+                          <Box sx={{ py: 4, textAlign: 'center' }}>
+                            <InventoryIcon sx={{ fontSize: 40, color: 'text.disabled', mb: 1 }} />
+                            <Typography variant="body2" color="text.disabled">
+                              No products added yet. Use the form above to add products.
+                            </Typography>
+                          </Box>
+                        </TableCell>
                       </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {transferItems.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={4} align="center" sx={{ py: 4 }}>
-                            No data found
+                    ) : (
+                      transferItems.map((item, idx) => (
+                        <TableRow key={item.transfer_detail_id || idx} sx={{ '&:hover': { bgcolor: 'grey.50' } }}>
+                          <TableCell>
+                            <Typography variant="body2" color="text.secondary">{idx + 1}</Typography>
                           </TableCell>
-                        </TableRow>
-                      ) : (
-                        transferItems.map((item, index) => (
-                          <TableRow key={item.transfer_detail_id || index}>
-                            <TableCell>
+                          <TableCell>
+                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
                               {item.product?.pro_title || `Product ${item.pro_id}`}
-                            </TableCell>
-                            <TableCell align="right">{item.quantity}</TableCell>
-                            <TableCell align="right">{item.packing || 0}</TableCell>
-                            <TableCell align="center">
-                              <IconButton
-                                size="small"
-                                color="error"
-                                onClick={() => handleRemoveProduct(index)}
-                              >
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="right">
+                            <Chip label={item.quantity} size="small" color="primary" />
+                          </TableCell>
+                          <TableCell align="right">
+                            <Typography variant="body2">{item.packing || 0}</Typography>
+                          </TableCell>
+                          <TableCell align="center">
+                            <Tooltip title="Remove">
+                              <IconButton size="small" color="error" onClick={() => handleRemoveProduct(idx)}>
                                 <DeleteIcon fontSize="small" />
                               </IconButton>
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              </Box>
+                            </Tooltip>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+
+              {transferItems.length > 0 && (
+                <Box sx={{ mt: 1.5, display: 'flex', justifyContent: 'flex-end' }}>
+                  <Chip
+                    label={`${transferItems.length} product${transferItems.length !== 1 ? 's' : ''} · Total qty: ${transferItems.reduce((s, i) => s + (i.quantity || 0), 0)}`}
+                    color="secondary"
+                    variant="outlined"
+                  />
+                </Box>
+              )}
+
+              <Divider sx={{ my: 3 }} />
 
               {/* Notes */}
-              <Box sx={{ mt: 4 }}>
-                <Typography variant="body2" sx={{ mb: 1, fontWeight: 'medium' }}>
-                  NOTES:
-                </Typography>
-                <TextField
-                  fullWidth
-                  multiline
-                  rows={3}
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Enter notes..."
-                  sx={{ bgcolor: 'white' }}
-                />
-              </Box>
+              <TextField
+                fullWidth
+                multiline
+                rows={3}
+                label="Notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Enter any notes for this transfer…"
+              />
             </CardContent>
           </Card>
 
           {/* Action Buttons */}
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            {/* Navigation Buttons */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+
+            {/* Record Navigation */}
             <Box sx={{ display: 'flex', gap: 1 }}>
-              <Button
-                variant="outlined"
-                startIcon={<FirstPageIcon />}
-                onClick={handleFirst}
-                disabled={currentTransferIndex <= 0}
-                sx={{ minWidth: 100 }}
-              >
-                First
-              </Button>
-              <Button
-                variant="outlined"
-                startIcon={<ChevronLeftIcon />}
-                onClick={handlePrevious}
-                disabled={currentTransferIndex <= 0}
-                sx={{ minWidth: 100 }}
-              >
-                Previous
-              </Button>
-              <Button
-                variant="outlined"
-                endIcon={<ChevronRightIcon />}
-                onClick={handleNext}
-                disabled={currentTransferIndex >= transfers.length - 1}
-                sx={{ minWidth: 100 }}
-              >
-                Next
-              </Button>
-              <Button
-                variant="outlined"
-                endIcon={<LastPageIcon />}
-                onClick={handleLast}
-                disabled={currentTransferIndex >= transfers.length - 1}
-                sx={{ minWidth: 100 }}
-              >
-                Last
-              </Button>
+              <Tooltip title="First">
+                <span>
+                  <Button variant="outlined" size="small" startIcon={<FirstPageIcon />} onClick={handleFirst} disabled={currentTransferIndex <= 0}>
+                    First
+                  </Button>
+                </span>
+              </Tooltip>
+              <Tooltip title="Previous">
+                <span>
+                  <Button variant="outlined" size="small" startIcon={<ChevronLeftIcon />} onClick={handlePrevious} disabled={currentTransferIndex <= 0}>
+                    Prev
+                  </Button>
+                </span>
+              </Tooltip>
+              {transfers.length > 0 && (
+                <Chip
+                  label={currentTransferIndex === -1 ? 'New' : `${currentTransferIndex + 1} / ${transfers.length}`}
+                  size="small"
+                  color="secondary"
+                  variant="outlined"
+                  sx={{ alignSelf: 'center', px: 1 }}
+                />
+              )}
+              <Tooltip title="Next">
+                <span>
+                  <Button variant="outlined" size="small" endIcon={<ChevronRightIcon />} onClick={handleNext} disabled={currentTransferIndex >= transfers.length - 1}>
+                    Next
+                  </Button>
+                </span>
+              </Tooltip>
+              <Tooltip title="Last">
+                <span>
+                  <Button variant="outlined" size="small" endIcon={<LastPageIcon />} onClick={handleLast} disabled={currentTransferIndex >= transfers.length - 1}>
+                    Last
+                  </Button>
+                </span>
+              </Tooltip>
             </Box>
 
-            {/* Main Action Buttons */}
-            <Box sx={{ display: 'flex', gap: 2 }}>
+            {/* Main Actions */}
+            <Box sx={{ display: 'flex', gap: 1.5 }}>
               <Button
                 variant="outlined"
                 onClick={handleNew}
-                sx={{ borderColor: '#9c27b0', color: '#9c27b0' }}
+                sx={{ borderColor: 'secondary.main', color: 'secondary.main' }}
               >
                 New
               </Button>
               <Button
                 variant="contained"
-                startIcon={<SaveIcon />}
+                startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <SaveIcon />}
                 onClick={handleSave}
                 disabled={loading}
                 sx={{
-                  bgcolor: '#9c27b0',
-                  '&:hover': { bgcolor: '#7b1fa2' }
+                  background: 'linear-gradient(45deg, #9C27B0 30%, #E91E63 90%)',
+                  '&:hover': { background: 'linear-gradient(45deg, #7B1FA2 30%, #C2185B 90%)' },
                 }}
               >
-                {loading ? <CircularProgress size={20} color="inherit" /> : 'Save'}
+                {loading ? 'Saving…' : 'Save'}
               </Button>
               <Button
-                variant="contained"
+                variant="outlined"
                 startIcon={<PrintIcon />}
-                sx={{
-                  bgcolor: '#9c27b0',
-                  '&:hover': { bgcolor: '#7b1fa2' }
-                }}
+                color="secondary"
               >
                 Print
               </Button>
               <Button
                 variant="contained"
+                color="error"
                 startIcon={<ClearIcon />}
                 onClick={handleCancel}
-                sx={{
-                  bgcolor: '#dc3545',
-                  '&:hover': { bgcolor: '#c82333' }
-                }}
               >
                 Cancel
               </Button>
             </Box>
           </Box>
 
-          {/* Snackbar */}
-          <Snackbar
-            open={snackbar.open}
-            autoHideDuration={6000}
-            onClose={handleCloseSnackbar}
-            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-          >
-            <Alert
-              onClose={handleCloseSnackbar}
-              severity={snackbar.severity}
-              variant="filled"
-              sx={{ width: '100%' }}
-            >
-              {snackbar.message}
-            </Alert>
-          </Snackbar>
         </Stack>
       </Container>
+      {SnackbarEl}
     </DashboardLayout>
   );
-
-  // Main render - switch between views
-  return currentView === 'list' ? renderListView() : renderFormView();
 }
-

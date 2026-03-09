@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import DashboardLayout from '../../components/dashboard-layout';
+import { shareReportViaWhatsApp, WHATSAPP_SVG_PATH } from '@/lib/shareReport';
 
 export default function SalesByDateReport() {
   const router = useRouter();
@@ -44,6 +45,22 @@ export default function SalesByDateReport() {
       alert('Error fetching report');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const [sendingWhatsApp, setSendingWhatsApp] = useState(false);
+  const handleShareWhatsApp = async () => {
+    setSendingWhatsApp(true);
+    try {
+      await shareReportViaWhatsApp('printable-report', {
+        filename: `sales-report-${startDate}-to-${endDate}.pdf`,
+        title: 'Sales Report (By Date)',
+      });
+    } catch (e) {
+      console.error('WhatsApp share error:', e);
+      alert('Could not generate PDF: ' + (e?.message || String(e)));
+    } finally {
+      setSendingWhatsApp(false);
     }
   };
 
@@ -179,6 +196,21 @@ export default function SalesByDateReport() {
                 >
                   <Printer className="w-4 h-4 mr-2" />
                   Print
+                </button>
+                <button
+                  onClick={handleShareWhatsApp}
+                  disabled={sendingWhatsApp}
+                  className="flex items-center px-4 py-2 text-white rounded-lg transition-colors duration-200 disabled:opacity-60"
+                  style={{ backgroundColor: sendingWhatsApp ? '#128C7E' : '#25D366' }}
+                >
+                  {sendingWhatsApp ? (
+                    <span className="w-4 h-4 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
+                  ) : (
+                    <svg viewBox="0 0 24 24" className="w-4 h-4 mr-2" fill="currentColor">
+                      <path d={WHATSAPP_SVG_PATH} />
+                    </svg>
+                  )}
+                  {sendingWhatsApp ? 'Generating PDF...' : 'Send via WhatsApp'}
                 </button>
               </div>
             </div>

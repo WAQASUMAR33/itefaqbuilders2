@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { 
+import {
   Download,
   Printer,
   ArrowLeft,
@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import DashboardLayout from '../../components/dashboard-layout';
+import { shareReportViaWhatsApp, WHATSAPP_SVG_PATH } from '@/lib/shareReport';
+import FingerprintAuthGuard from '@/components/FingerprintAuthGuard';
 
 export default function CustomerLedgerReport() {
   const router = useRouter();
@@ -79,6 +81,22 @@ export default function CustomerLedgerReport() {
     }
   };
 
+  const [sendingWhatsApp, setSendingWhatsApp] = useState(false);
+  const handleShareWhatsApp = async () => {
+    setSendingWhatsApp(true);
+    try {
+      await shareReportViaWhatsApp('printable-report', {
+        filename: `customer-ledger-${startDate}-to-${endDate}.pdf`,
+        title: 'Customer Ledger Report',
+      });
+    } catch (e) {
+      console.error('WhatsApp share error:', e);
+      alert('Could not generate PDF: ' + (e?.message || String(e)));
+    } finally {
+      setSendingWhatsApp(false);
+    }
+  };
+
   const handlePrint = () => {
     window.print();
   };
@@ -115,6 +133,7 @@ export default function CustomerLedgerReport() {
   };
 
   return (
+    <FingerprintAuthGuard>
     <DashboardLayout>
       <div id="printable-report" className="h-full flex flex-col overflow-hidden print:overflow-visible">
         {/* Header */}
@@ -267,6 +286,21 @@ export default function CustomerLedgerReport() {
                   <Printer className="w-4 h-4 mr-2" />
                   Print
                 </button>
+                <button
+                  onClick={handleShareWhatsApp}
+                  disabled={sendingWhatsApp}
+                  className="flex items-center px-4 py-2 text-white rounded-lg transition-colors duration-200 disabled:opacity-60"
+                  style={{ backgroundColor: sendingWhatsApp ? '#128C7E' : '#25D366' }}
+                >
+                  {sendingWhatsApp ? (
+                    <span className="w-4 h-4 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
+                  ) : (
+                    <svg viewBox="0 0 24 24" className="w-4 h-4 mr-2" fill="currentColor">
+                      <path d={WHATSAPP_SVG_PATH} />
+                    </svg>
+                  )}
+                  {sendingWhatsApp ? 'Generating PDF...' : 'Send via WhatsApp'}
+                </button>
               </div>
             </div>
 
@@ -403,5 +437,6 @@ export default function CustomerLedgerReport() {
         }
       `}</style>
     </DashboardLayout>
+    </FingerprintAuthGuard>
   );
 }

@@ -613,7 +613,8 @@ export async function POST(request) {
     const result = await prisma.$transaction(async (tx) => {
       // Get customer's current balance
       const customer = await tx.customer.findUnique({
-        where: { cus_id }
+        where: { cus_id },
+        include: { city: true }
       });
 
       if (!customer) {
@@ -1070,7 +1071,7 @@ export async function POST(request) {
                   closing_balance: transportAccount.cus_balance + transportAmount,
                   bill_no: sale.sale_id.toString(),
                   trnx_type: 'CASH',
-                  details: `Transport Charges - ${bill_type || 'BILL'} - ${transport.description || 'Transport'}`,
+                  details: `Transport Charges - ${bill_type || 'BILL'} #${sale.sale_id} - ${customer.cus_name}${customer.city?.city_name ? ` - ${customer.city.city_name}` : ''}${customer.cus_address ? ` - ${customer.cus_address}` : ''}`,
                   payments: 0,
                   updated_by
                 });
@@ -1085,7 +1086,7 @@ export async function POST(request) {
                     closing_balance: specialAccounts.sundryDebtors.cus_balance - transportAmount,
                     bill_no: sale.sale_id.toString(),
                     trnx_type: 'CASH',
-                    details: `Transport Charges - ${bill_type || 'BILL'} - Sundry Debtors`,
+                    details: `Transport Charges - ${bill_type || 'BILL'} #${sale.sale_id} - ${customer.cus_name}${customer.city?.city_name ? ` - ${customer.city.city_name}` : ''}${customer.cus_address ? ` - ${customer.cus_address}` : ''} - Sundry Debtors`,
                     payments: 0,
                     updated_by
                   });

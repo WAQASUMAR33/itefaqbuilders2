@@ -15,6 +15,7 @@ import ClientOnly from './client-only';
 export default function DashboardLayout({ children }) {
   const [user, setUser] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [expandedDropdowns, setExpandedDropdowns] = useState({
     'dashboard': false,
@@ -140,6 +141,8 @@ export default function DashboardLayout({ children }) {
         <Sidebar
           sidebarOpen={sidebarOpen}
           setSidebarOpen={setSidebarOpen}
+          sidebarCollapsed={sidebarCollapsed}
+          setSidebarCollapsed={setSidebarCollapsed}
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           expandedDropdowns={expandedDropdowns}
@@ -153,7 +156,8 @@ export default function DashboardLayout({ children }) {
           component="main"
           sx={{
             flexGrow: 1,
-            width: { lg: `calc(100% - 320px)` },
+            width: { lg: `calc(100% - ${sidebarCollapsed ? 72 : 320}px)` },
+            transition: 'width 0.3s ease',
             bgcolor: 'background.default',
             minHeight: '100vh',
             display: 'flex',

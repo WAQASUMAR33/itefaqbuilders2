@@ -1,7 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { 
+import {
   Box,
   Drawer,
   List,
@@ -16,9 +17,14 @@ import {
   Collapse,
   Tooltip,
   useTheme,
-  useMediaQuery
+  useMediaQuery,
+  TextField,
+  InputAdornment
 } from '@mui/material';
 import {
+  Search as SearchIcon,
+  ChevronLeft as ChevronLeftIcon,
+  ChevronRight as ChevronRightIcon,
   Dashboard as DashboardIcon,
   People as PeopleIcon,
   Inventory as InventoryIcon,
@@ -47,17 +53,21 @@ import {
   SwapHoriz as SwapHorizIcon
 } from '@mui/icons-material';
 
-export default function Sidebar({ 
-  sidebarOpen, 
-  setSidebarOpen, 
-  activeTab, 
-  setActiveTab, 
-  expandedDropdowns, 
+export default function Sidebar({
+  sidebarOpen,
+  setSidebarOpen,
+  sidebarCollapsed,
+  setSidebarCollapsed,
+  activeTab,
+  setActiveTab,
+  expandedDropdowns,
   setExpandedDropdowns,
   user,
-  handleLogout 
+  handleLogout
 }) {
   const router = useRouter();
+  const [searchQuery, setSearchQuery] = useState('');
+
   const menuItems = [
     { id: 'dashboard', name: 'Dashboard', icon: DashboardIcon, category: 'main' },
     
@@ -201,28 +211,55 @@ export default function Sidebar({
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('lg'));
 
-  const drawerWidth = 320;
+  const drawerWidth = isMobile ? 320 : (sidebarCollapsed ? 72 : 320);
 
   const renderMenuSection = (category, title, icon) => {
     const items = menuItems.filter(item => item.category === category);
     const isExpanded = expandedDropdowns[category];
+    const collapsed = sidebarCollapsed && !isMobile;
 
-  return (
+    // Collapsed: show icons only with tooltips
+    if (collapsed) {
+      return (
+        <Box key={category} sx={{ mb: 0.5 }}>
+          {items.map((item) => (
+            <Tooltip key={item.id} title={`${title} › ${item.name}`} placement="right">
+              <ListItemButton
+                onClick={() => handleNavigation(item.id)}
+                sx={{
+                  borderRadius: 2,
+                  mb: 0.5,
+                  justifyContent: 'center',
+                  minHeight: 44,
+                  backgroundColor: activeTab === item.id ? 'primary.light' : 'transparent',
+                  color: activeTab === item.id ? 'primary.contrastText' : 'text.primary',
+                  '&:hover': { backgroundColor: activeTab === item.id ? 'primary.main' : 'action.hover' },
+                }}
+              >
+                <ListItemIcon sx={{ minWidth: 0, color: 'inherit', justifyContent: 'center' }}>
+                  <item.icon fontSize="small" />
+                </ListItemIcon>
+              </ListItemButton>
+            </Tooltip>
+          ))}
+        </Box>
+      );
+    }
+
+    return (
       <Box key={category}>
         <ListItemButton
           onClick={() => toggleDropdown(category)}
           sx={{
             borderRadius: 2,
             mb: 1,
-            '&:hover': {
-              backgroundColor: 'action.hover',
-            },
+            '&:hover': { backgroundColor: 'action.hover' },
           }}
         >
           <ListItemIcon sx={{ minWidth: 40 }}>
             {icon}
           </ListItemIcon>
-          <ListItemText 
+          <ListItemText
             primary={
               <Typography variant="body2" sx={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
                 {title}
@@ -231,13 +268,13 @@ export default function Sidebar({
           />
           {isExpanded ? <ExpandLess /> : <ExpandMore />}
         </ListItemButton>
-        
+
         <Collapse in={isExpanded} timeout="auto" unmountOnExit>
           <List component="div" disablePadding>
             {items.map((item) => (
               <ListItemButton
-                  key={item.id}
-                  onClick={() => handleNavigation(item.id)}
+                key={item.id}
+                onClick={() => handleNavigation(item.id)}
                 sx={{
                   pl: 4,
                   borderRadius: 2,
@@ -252,7 +289,7 @@ export default function Sidebar({
                 <ListItemIcon sx={{ minWidth: 40, color: 'inherit' }}>
                   <item.icon />
                 </ListItemIcon>
-                <ListItemText 
+                <ListItemText
                   primary={
                     <Typography variant="body2" sx={{ fontWeight: activeTab === item.id ? 600 : 400 }}>
                       {item.name}
@@ -270,38 +307,55 @@ export default function Sidebar({
   const drawerContent = (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
-      <Box sx={{ 
-        p: 3, 
-        borderBottom: 1, 
+      <Box sx={{
+        p: sidebarCollapsed && !isMobile ? 1.5 : 3,
+        borderBottom: 1,
         borderColor: 'divider',
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'space-between'
+        justifyContent: sidebarCollapsed && !isMobile ? 'center' : 'space-between',
+        minHeight: 72,
+        transition: 'padding 0.3s ease',
       }}>
-        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-          <Avatar sx={{ 
-            bgcolor: 'primary.main', 
-            mr: 2,
-            width: 48,
-            height: 48
-          }}>
-            <DashboardIcon />
-          </Avatar>
-          <Box>
-            <Typography variant="h6" sx={{ 
-              fontWeight: 'bold',
-              background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
-              backgroundClip: 'text',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-            }}>
-              Ittefaq Iron and Cement Store
-            </Typography>
-            <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500 }}>
-              POS System
-            </Typography>
+        {(!sidebarCollapsed || isMobile) && (
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <Avatar sx={{ bgcolor: 'primary.main', mr: 2, width: 48, height: 48 }}>
+              <DashboardIcon />
+            </Avatar>
+            <Box>
+              <Typography variant="h6" sx={{
+                fontWeight: 'bold',
+                fontSize: '0.85rem',
+                background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
+                backgroundClip: 'text',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+              }}>
+                Ittefaq Iron and Cement Store
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500 }}>
+                POS System
+              </Typography>
+            </Box>
           </Box>
-        </Box>
+        )}
+
+        {sidebarCollapsed && !isMobile && (
+          <Tooltip title="Expand Sidebar" placement="right">
+            <Avatar sx={{ bgcolor: 'primary.main', width: 40, height: 40, cursor: 'pointer' }} onClick={() => setSidebarCollapsed(false)}>
+              <DashboardIcon fontSize="small" />
+            </Avatar>
+          </Tooltip>
+        )}
+
+        {!isMobile && !sidebarCollapsed && (
+          <Tooltip title="Collapse Sidebar">
+            <IconButton onClick={() => setSidebarCollapsed(true)} size="small">
+              <ChevronLeftIcon />
+            </IconButton>
+          </Tooltip>
+        )}
+
         {isMobile && (
           <IconButton onClick={() => setSidebarOpen(false)}>
             <CloseIcon />
@@ -309,45 +363,125 @@ export default function Sidebar({
         )}
       </Box>
 
+      {/* Search — hidden when collapsed */}
+      {(!sidebarCollapsed || isMobile) && <Box sx={{ px: 2, py: 1.5, borderBottom: 1, borderColor: 'divider' }}>
+        <TextField
+          size="small"
+          fullWidth
+          placeholder="Search menu..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          slotProps={{
+            input: {
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" color="action" />
+                </InputAdornment>
+              ),
+            },
+          }}
+          sx={{ bgcolor: 'action.hover', borderRadius: 2, '& fieldset': { border: 'none' } }}
+        />
+      </Box>}
+
       {/* Navigation */}
       <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
         <List>
+          {/* Search Results */}
+          {searchQuery.trim() && (
+            <Box sx={{ mb: 1 }}>
+              {menuItems
+                .filter(item => item.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                .length === 0 ? (
+                  <Typography variant="body2" sx={{ px: 2, py: 1, color: 'text.secondary' }}>
+                    No results found
+                  </Typography>
+                ) : (
+                  menuItems
+                    .filter(item => item.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                    .map((item) => (
+                      <ListItemButton
+                        key={item.id}
+                        onClick={() => { handleNavigation(item.id); setSearchQuery(''); }}
+                        sx={{
+                          borderRadius: 2,
+                          mb: 0.5,
+                          backgroundColor: activeTab === item.id ? 'primary.light' : 'transparent',
+                          color: activeTab === item.id ? 'primary.contrastText' : 'text.primary',
+                          '&:hover': {
+                            backgroundColor: activeTab === item.id ? 'primary.main' : 'action.hover',
+                          },
+                        }}
+                      >
+                        <ListItemIcon sx={{ minWidth: 40, color: 'inherit' }}>
+                          <item.icon />
+                        </ListItemIcon>
+                        <ListItemText
+                          primary={<Typography variant="body2">{item.name}</Typography>}
+                          secondary={item.parent && (
+                            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                              {item.parent}
+                            </Typography>
+                          )}
+                        />
+                      </ListItemButton>
+                    ))
+                )}
+            </Box>
+          )}
+
+          {/* Normal menu — hidden when searching */}
+          {!searchQuery.trim() && <>
+
           {/* Dashboard */}
           <Box sx={{ mb: 2 }}>
-            <Typography variant="overline" sx={{ 
-              px: 2, 
-              py: 1, 
-              color: 'text.secondary',
-              fontWeight: 600,
-              letterSpacing: 1
-            }}>
-              Overview
-            </Typography>
+            {(!sidebarCollapsed || isMobile) && (
+              <Typography variant="overline" sx={{
+                px: 2, py: 1, color: 'text.secondary', fontWeight: 600, letterSpacing: 1
+              }}>
+                Overview
+              </Typography>
+            )}
             {menuItems.filter(item => item.category === 'main').map((item) => (
-              <ListItemButton
-                      key={item.id}
-                      onClick={() => handleNavigation(item.id)}
-                sx={{
-                  borderRadius: 2,
-                  mb: 0.5,
-                  backgroundColor: activeTab === item.id ? 'primary.light' : 'transparent',
-                  color: activeTab === item.id ? 'primary.contrastText' : 'text.primary',
-                  '&:hover': {
-                    backgroundColor: activeTab === item.id ? 'primary.main' : 'action.hover',
-                  },
-                }}
-              >
-                <ListItemIcon sx={{ minWidth: 40, color: 'inherit' }}>
-                  <item.icon />
-                </ListItemIcon>
-                <ListItemText 
-                  primary={
-                    <Typography variant="body2" sx={{ fontWeight: activeTab === item.id ? 600 : 400 }}>
-                      {item.name}
-                    </Typography>
-                  }
-                />
-              </ListItemButton>
+              (sidebarCollapsed && !isMobile) ? (
+                <Tooltip key={item.id} title={item.name} placement="right">
+                  <ListItemButton
+                    onClick={() => handleNavigation(item.id)}
+                    sx={{
+                      borderRadius: 2, mb: 0.5, justifyContent: 'center', minHeight: 44,
+                      backgroundColor: activeTab === item.id ? 'primary.light' : 'transparent',
+                      color: activeTab === item.id ? 'primary.contrastText' : 'text.primary',
+                      '&:hover': { backgroundColor: activeTab === item.id ? 'primary.main' : 'action.hover' },
+                    }}
+                  >
+                    <ListItemIcon sx={{ minWidth: 0, color: 'inherit', justifyContent: 'center' }}>
+                      <item.icon fontSize="small" />
+                    </ListItemIcon>
+                  </ListItemButton>
+                </Tooltip>
+              ) : (
+                <ListItemButton
+                  key={item.id}
+                  onClick={() => handleNavigation(item.id)}
+                  sx={{
+                    borderRadius: 2, mb: 0.5,
+                    backgroundColor: activeTab === item.id ? 'primary.light' : 'transparent',
+                    color: activeTab === item.id ? 'primary.contrastText' : 'text.primary',
+                    '&:hover': { backgroundColor: activeTab === item.id ? 'primary.main' : 'action.hover' },
+                  }}
+                >
+                  <ListItemIcon sx={{ minWidth: 40, color: 'inherit' }}>
+                    <item.icon />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={
+                      <Typography variant="body2" sx={{ fontWeight: activeTab === item.id ? 600 : 400 }}>
+                        {item.name}
+                      </Typography>
+                    }
+                  />
+                </ListItemButton>
+              )
             ))}
           </Box>
 
@@ -362,77 +496,97 @@ export default function Sidebar({
 
           {/* System */}
           <Box sx={{ mb: 2 }}>
-            <Typography variant="overline" sx={{ 
-              px: 2, 
-              py: 1, 
-              color: 'text.secondary',
-              fontWeight: 600,
-              letterSpacing: 1
-            }}>
-              System
-            </Typography>
+            {(!sidebarCollapsed || isMobile) && (
+              <Typography variant="overline" sx={{
+                px: 2, py: 1, color: 'text.secondary', fontWeight: 600, letterSpacing: 1
+              }}>
+                System
+              </Typography>
+            )}
             {menuItems.filter(item => item.category === 'system').map((item) => (
-              <ListItemButton
-                      key={item.id}
-                      onClick={() => handleNavigation(item.id)}
-                sx={{
-                  borderRadius: 2,
-                  mb: 0.5,
-                  backgroundColor: activeTab === item.id ? 'primary.light' : 'transparent',
-                  color: activeTab === item.id ? 'primary.contrastText' : 'text.primary',
-                  '&:hover': {
-                    backgroundColor: activeTab === item.id ? 'primary.main' : 'action.hover',
-                  },
-                }}
-              >
-                <ListItemIcon sx={{ minWidth: 40, color: 'inherit' }}>
-                  <item.icon />
-                </ListItemIcon>
-                <ListItemText 
-                  primary={
-                    <Typography variant="body2" sx={{ fontWeight: activeTab === item.id ? 600 : 400 }}>
-                      {item.name}
-                    </Typography>
-                  }
-                />
-              </ListItemButton>
+              (sidebarCollapsed && !isMobile) ? (
+                <Tooltip key={item.id} title={item.name} placement="right">
+                  <ListItemButton
+                    onClick={() => handleNavigation(item.id)}
+                    sx={{
+                      borderRadius: 2, mb: 0.5, justifyContent: 'center', minHeight: 44,
+                      backgroundColor: activeTab === item.id ? 'primary.light' : 'transparent',
+                      color: activeTab === item.id ? 'primary.contrastText' : 'text.primary',
+                      '&:hover': { backgroundColor: activeTab === item.id ? 'primary.main' : 'action.hover' },
+                    }}
+                  >
+                    <ListItemIcon sx={{ minWidth: 0, color: 'inherit', justifyContent: 'center' }}>
+                      <item.icon fontSize="small" />
+                    </ListItemIcon>
+                  </ListItemButton>
+                </Tooltip>
+              ) : (
+                <ListItemButton
+                  key={item.id}
+                  onClick={() => handleNavigation(item.id)}
+                  sx={{
+                    borderRadius: 2, mb: 0.5,
+                    backgroundColor: activeTab === item.id ? 'primary.light' : 'transparent',
+                    color: activeTab === item.id ? 'primary.contrastText' : 'text.primary',
+                    '&:hover': { backgroundColor: activeTab === item.id ? 'primary.main' : 'action.hover' },
+                  }}
+                >
+                  <ListItemIcon sx={{ minWidth: 40, color: 'inherit' }}>
+                    <item.icon />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={
+                      <Typography variant="body2" sx={{ fontWeight: activeTab === item.id ? 600 : 400 }}>
+                        {item.name}
+                      </Typography>
+                    }
+                  />
+                </ListItemButton>
+              )
             ))}
           </Box>
+          </>}
         </List>
       </Box>
 
       {/* User Profile */}
-      <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
-        <Box sx={{ 
-          p: 2, 
-          borderRadius: 2, 
-          border: 1, 
-          borderColor: 'divider',
-          display: 'flex',
-          alignItems: 'center'
-        }}>
-          <Avatar sx={{ 
-            bgcolor: 'primary.main', 
-            mr: 2,
-            width: 40,
-            height: 40
-          }}>
-            {user?.email?.charAt(0).toUpperCase()}
-          </Avatar>
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="body2" sx={{ fontWeight: 600, truncate: true }}>
-              {user?.email}
-            </Typography>
-            <Typography variant="caption" sx={{ color: 'text.secondary', textTransform: 'uppercase' }}>
-              {user?.role}
-            </Typography>
+      <Box sx={{ p: sidebarCollapsed && !isMobile ? 1 : 2, borderTop: 1, borderColor: 'divider' }}>
+        {(sidebarCollapsed && !isMobile) ? (
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+            <Tooltip title={user?.email} placement="right">
+              <Avatar sx={{ bgcolor: 'primary.main', width: 36, height: 36, cursor: 'default' }}>
+                {user?.email?.charAt(0).toUpperCase()}
+              </Avatar>
+            </Tooltip>
+            <Tooltip title="Logout" placement="right">
+              <IconButton onClick={handleLogout} size="small">
+                <LogoutIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
           </Box>
-          <Tooltip title="Logout">
-            <IconButton onClick={handleLogout} size="small">
-              <LogoutIcon />
-            </IconButton>
-          </Tooltip>
-        </Box>
+        ) : (
+          <Box sx={{
+            p: 2, borderRadius: 2, border: 1, borderColor: 'divider',
+            display: 'flex', alignItems: 'center'
+          }}>
+            <Avatar sx={{ bgcolor: 'primary.main', mr: 2, width: 40, height: 40 }}>
+              {user?.email?.charAt(0).toUpperCase()}
+            </Avatar>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
+                {user?.email}
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary', textTransform: 'uppercase' }}>
+                {user?.role}
+              </Typography>
+            </Box>
+            <Tooltip title="Logout">
+              <IconButton onClick={handleLogout} size="small">
+                <LogoutIcon />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        )}
       </Box>
     </Box>
   );
@@ -446,11 +600,14 @@ export default function Sidebar({
         sx={{
           width: drawerWidth,
           flexShrink: 0,
+          transition: 'width 0.3s ease',
           '& .MuiDrawer-paper': {
             width: drawerWidth,
             boxSizing: 'border-box',
             borderRight: 1,
             borderColor: 'divider',
+            overflowX: 'hidden',
+            transition: 'width 0.3s ease',
           },
         }}
       >

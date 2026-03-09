@@ -91,6 +91,7 @@ export default function ProductsPage() {
     pro_baser_price: '',
     pro_crate: '',
     pro_stock_qnty: '',
+    pro_low_stock: '10',
     pro_unit: '',
     pro_packing: '',
     cat_id: '',
@@ -185,6 +186,7 @@ export default function ProductsPage() {
           pro_baser_price: '',
           pro_crate: '',
           pro_stock_qnty: '',
+          pro_low_stock: '',
           pro_unit: '',
           pro_packing: '',
           cat_id: '',
@@ -225,6 +227,7 @@ export default function ProductsPage() {
       pro_baser_price: product.pro_baser_price || '',
       pro_crate: product.pro_crate || '',
       pro_stock_qnty: product.pro_stock_qnty || '',
+      pro_low_stock: product.pro_low_stock ?? '',
       pro_unit: product.pro_unit || '',
       pro_packing: product.pro_packing || '',
       cat_id: product.cat_id || '',
@@ -264,6 +267,7 @@ export default function ProductsPage() {
           pro_baser_price: '',
           pro_crate: '',
           pro_stock_qnty: '',
+          pro_low_stock: '',
           pro_unit: '',
           pro_packing: '',
           cat_id: '',
@@ -382,6 +386,7 @@ export default function ProductsPage() {
           pro_baser_price: '',
           pro_crate: '',
           pro_stock_qnty: '',
+          pro_low_stock: '',
           pro_unit: '',
           pro_packing: '',
           cat_id: '',
@@ -486,7 +491,7 @@ export default function ProductsPage() {
       
       let matchesStock = true;
       if (stockFilter === 'low') {
-        matchesStock = product.pro_stock_qnty < 10;
+        matchesStock = product.pro_low_stock != null && product.pro_stock_qnty > 0 && product.pro_stock_qnty <= product.pro_low_stock;
       } else if (stockFilter === 'out') {
         matchesStock = product.pro_stock_qnty <= 0;
       }
@@ -523,7 +528,7 @@ export default function ProductsPage() {
   // Calculate stats
   const totalProducts = products.length;
   const totalValue = products.reduce((sum, product) => sum + (parseFloat(product.pro_cost_price) * parseFloat(product.pro_stock_qnty) || 0), 0);
-  const lowStockProducts = products.filter(product => product.pro_stock_qnty < 10).length;
+  const lowStockProducts = products.filter(product => product.pro_low_stock != null && product.pro_stock_qnty > 0 && product.pro_stock_qnty <= product.pro_low_stock).length;
   const outOfStockProducts = products.filter(product => product.pro_stock_qnty <= 0).length;
 
   // Clear filters
@@ -882,9 +887,16 @@ export default function ProductsPage() {
                       
                       {/* Qty */}
                       <TableCell>
-                        <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-                          {product.pro_stock_qnty} {product.pro_unit || 'units'}
-                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                            {product.pro_stock_qnty} {product.pro_unit || 'units'}
+                          </Typography>
+                          {product.pro_stock_qnty <= 0 ? (
+                            <Chip label="Out" size="small" color="error" sx={{ height: 18, fontSize: 10 }} />
+                          ) : product.pro_low_stock != null && product.pro_stock_qnty <= product.pro_low_stock ? (
+                            <Chip label="Low" size="small" color="warning" sx={{ height: 18, fontSize: 10 }} />
+                          ) : null}
+                        </Box>
                       </TableCell>
                       
                       {/* CRate */}
@@ -1189,6 +1201,29 @@ export default function ProductsPage() {
                         placeholder="0"
                         sx={{ minWidth: 250 }}
                       />
+                  </Grid>
+
+                    {/* Low Stock Threshold */}
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      fullWidth
+                      label="Low Stock Alert (Threshold)"
+                      name="pro_low_stock"
+                      type="number"
+                      value={formData.pro_low_stock}
+                      onChange={handleFormChange}
+                      placeholder="10"
+                      inputProps={{ min: 0 }}
+                      helperText="Alert when stock falls at or below this number"
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <AlertIcon fontSize="small" sx={{ color: 'warning.main' }} />
+                          </InputAdornment>
+                        ),
+                      }}
+                      sx={{ minWidth: 250 }}
+                    />
                   </Grid>
 
                     {/* Unit */}

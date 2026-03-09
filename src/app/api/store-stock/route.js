@@ -63,17 +63,20 @@ export async function GET(request) {
       } catch (e) {
         // Fallback to raw SQL if relation doesn't work
         const rows = await prisma.$queryRaw`
-          SELECT 
-            s.*,
-            ss.store_stock_id,
-            ss.pro_id,
-            ss.stock_quantity,
+          SELECT
+            s.storeid, s.store_name, s.store_address,
+            ss.store_stock_id, ss.pro_id, ss.stock_quantity, ss.min_stock,
             p.pro_id as product_pro_id,
             p.pro_title as product_pro_title,
-            p.pro_unit as product_pro_unit
+            p.pro_unit as product_pro_unit,
+            p.pro_cost_price as product_pro_cost_price,
+            p.pro_sale_price as product_pro_sale_price,
+            c.cat_name as product_cat_name
           FROM stores s
           LEFT JOIN store_stocks ss ON s.storeid = ss.store_id
           LEFT JOIN products p ON ss.pro_id = p.pro_id
+          LEFT JOIN categories c ON p.cat_id = c.cat_id
+          WHERE ss.pro_id IS NOT NULL
           ORDER BY s.storeid, p.pro_title
         `;
         // Group by store
@@ -81,26 +84,23 @@ export async function GET(request) {
           const storeId = row.storeid;
           let store = acc.find(s => s.storeid === storeId);
           if (!store) {
-            store = {
-              storeid: row.storeid,
-              store_name: row.store_name,
-              store_address: row.store_address,
-              created_at: row.created_at,
-              updated_at: row.updated_at,
-              store_stocks: []
-            };
+            store = { storeid: row.storeid, store_name: row.store_name, store_stocks: [] };
             acc.push(store);
           }
           if (row.store_stock_id) {
             store.store_stocks.push({
               store_stock_id: row.store_stock_id,
-              store_id: row.store_id,
+              store_id: row.storeid,
               pro_id: row.pro_id,
               stock_quantity: row.stock_quantity,
+              min_stock: row.min_stock,
               product: {
                 pro_id: row.product_pro_id,
                 pro_title: row.product_pro_title,
-                pro_unit: row.product_pro_unit
+                pro_unit: row.product_pro_unit,
+                pro_cost_price: row.product_pro_cost_price,
+                pro_sale_price: row.product_pro_sale_price,
+                cat_name: row.product_cat_name
               }
             });
           }
@@ -110,17 +110,20 @@ export async function GET(request) {
     } else {
       // Raw SQL fallback
       const rows = await prisma.$queryRaw`
-        SELECT 
-          s.*,
-          ss.store_stock_id,
-          ss.pro_id,
-          ss.stock_quantity,
+        SELECT
+          s.storeid, s.store_name, s.store_address,
+          ss.store_stock_id, ss.pro_id, ss.stock_quantity, ss.min_stock,
           p.pro_id as product_pro_id,
           p.pro_title as product_pro_title,
-          p.pro_unit as product_pro_unit
+          p.pro_unit as product_pro_unit,
+          p.pro_cost_price as product_pro_cost_price,
+          p.pro_sale_price as product_pro_sale_price,
+          c.cat_name as product_cat_name
         FROM stores s
         LEFT JOIN store_stocks ss ON s.storeid = ss.store_id
         LEFT JOIN products p ON ss.pro_id = p.pro_id
+        LEFT JOIN categories c ON p.cat_id = c.cat_id
+        WHERE ss.pro_id IS NOT NULL
         ORDER BY s.storeid, p.pro_title
       `;
       // Group by store
@@ -128,26 +131,23 @@ export async function GET(request) {
         const storeId = row.storeid;
         let store = acc.find(s => s.storeid === storeId);
         if (!store) {
-          store = {
-            storeid: row.storeid,
-            store_name: row.store_name,
-            store_address: row.store_address,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-            store_stocks: []
-          };
+          store = { storeid: row.storeid, store_name: row.store_name, store_stocks: [] };
           acc.push(store);
         }
         if (row.store_stock_id) {
           store.store_stocks.push({
             store_stock_id: row.store_stock_id,
-            store_id: row.store_id,
+            store_id: row.storeid,
             pro_id: row.pro_id,
             stock_quantity: row.stock_quantity,
+            min_stock: row.min_stock,
             product: {
               pro_id: row.product_pro_id,
               pro_title: row.product_pro_title,
-              pro_unit: row.product_pro_unit
+              pro_unit: row.product_pro_unit,
+              pro_cost_price: row.product_pro_cost_price,
+              pro_sale_price: row.product_pro_sale_price,
+              cat_name: row.product_cat_name
             }
           });
         }

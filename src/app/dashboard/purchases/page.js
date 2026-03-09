@@ -75,6 +75,18 @@ import {
   AttachMoney as AttachMoneyIcon
 } from '@mui/icons-material';
 
+const PURCHASE_DRAFT_KEY = 'purchase_form_draft';
+
+function readPurchaseDraft() {
+  try {
+    if (typeof window === 'undefined') return null;
+    const s = sessionStorage.getItem(PURCHASE_DRAFT_KEY);
+    return s ? JSON.parse(s) : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function PurchasesPage() {
   // State management
   const [purchases, setPurchases] = useState([]);
@@ -123,7 +135,7 @@ export default function PurchasesPage() {
   const [editingPurchase, setEditingPurchase] = useState(null);
   const [viewingPurchase, setViewingPurchase] = useState(null);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
-  const [currentView, setCurrentView] = useState('list'); // 'list' or 'create'
+  const [currentView, setCurrentView] = useState(() => readPurchaseDraft()?.currentView ?? 'list');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [snackbar, setSnackbar] = useState({
     open: false,
@@ -169,9 +181,26 @@ export default function PurchasesPage() {
   const [categories, setCategories] = useState([]);
   const [subcategories, setSubcategories] = useState([]);
 
+  // Quick Add Product dialog
+  const [showAddProductDialog, setShowAddProductDialog] = useState(false);
+  const [isSubmittingProduct, setIsSubmittingProduct] = useState(false);
+  const [newProductData, setNewProductData] = useState({
+    pro_title: '',
+    pro_description: '',
+    pro_cost_price: '',
+    pro_sale_price: '',
+    pro_baser_price: '',
+    pro_crate: '',
+    pro_stock_qnty: '',
+    pro_unit: '',
+    pro_packing: '',
+    cat_id: '',
+    sub_cat_id: ''
+  });
+
   // Selected product for preview
-  const [selectedProduct, setSelectedProduct] = useState(null);
-  const [productFormData, setProductFormData] = useState({
+  const [selectedProduct, setSelectedProduct] = useState(() => readPurchaseDraft()?.selectedProduct ?? null);
+  const [productFormData, setProductFormData] = useState(() => readPurchaseDraft()?.productFormData ?? {
     qnty: '1',
     unit_rate: '',
     crate: ''
@@ -180,14 +209,14 @@ export default function PurchasesPage() {
   // Customer dropdown filter states
   const [customerSearchTerm, setCustomerSearchTerm] = useState('');
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
-  const [selectedBankAccount, setSelectedBankAccount] = useState(null);
+  const [selectedBankAccount, setSelectedBankAccount] = useState(() => readPurchaseDraft()?.selectedBankAccount ?? null);
   const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false);
   const [bankAccountDropdownOpen, setBankAccountDropdownOpen] = useState(false);
-  const [formSelectedCustomer, setFormSelectedCustomer] = useState(null);
+  const [formSelectedCustomer, setFormSelectedCustomer] = useState(() => readPurchaseDraft()?.formSelectedCustomer ?? null);
   const [vehicleDropdownOpen, setVehicleDropdownOpen] = useState(false);
 
   // Form data
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState(() => readPurchaseDraft()?.formData ?? {
     cus_id: '',
     store_id: '',
     debit_account_id: '',
@@ -235,6 +264,21 @@ export default function PurchasesPage() {
       console.log('🔍 Auto-selected first store:', firstStore.store_name);
     }
   }, [stores, formData.store_id]);
+
+  // Auto-save purchase form draft to sessionStorage on every state change
+  useEffect(() => {
+    if (editingPurchase) return; // Don't overwrite the create-draft while editing an existing record
+    try {
+      sessionStorage.setItem(PURCHASE_DRAFT_KEY, JSON.stringify({
+        formData,
+        formSelectedCustomer,
+        selectedBankAccount,
+        productFormData,
+        selectedProduct,
+        currentView
+      }));
+    } catch {}
+  }, [formData, formSelectedCustomer, selectedBankAccount, productFormData, selectedProduct, currentView, editingPurchase]);
 
   // Function to handle labour charges distribution
   const handleLabourDistribution = (includeLabour, labourAmount, purchaseDetails) => {
@@ -432,6 +476,38 @@ export default function PurchasesPage() {
     return matchesSearch;
   });
 
+  // Quick Add Product handler
+  const handleQuickAddProduct = async (e) => {
+    e.preventDefault();
+    setIsSubmittingProduct(true);
+    try {
+      const response = await fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newProductData),
+      });
+      if (response.ok) {
+        const created = await response.json();
+        setProducts(prev => [...prev, created]);
+        setSelectedProduct(created);
+        setShowAddProductDialog(false);
+        setNewProductData({
+          pro_title: '', pro_description: '', pro_cost_price: '',
+          pro_sale_price: '', pro_baser_price: '', pro_crate: '',
+          pro_stock_qnty: '', pro_unit: '', pro_packing: '', cat_id: '', sub_cat_id: ''
+        });
+        setSnackbar({ open: true, message: 'Product created and selected!', severity: 'success' });
+      } else {
+        const err = await response.json();
+        setSnackbar({ open: true, message: err.error || 'Failed to create product', severity: 'error' });
+      }
+    } catch {
+      setSnackbar({ open: true, message: 'Failed to create product', severity: 'error' });
+    } finally {
+      setIsSubmittingProduct(false);
+    }
+  };
+
   // Customer filtering logic
   const filteredCustomers = customers.filter(customer => {
     const matchesSearch = customer.cus_name.toLowerCase().includes(customerSearchTerm.toLowerCase()) ||
@@ -546,6 +622,33 @@ export default function PurchasesPage() {
       unit_rate: '',
       crate: ''
     });
+  };
+
+  const clearDraft = () => {
+    sessionStorage.removeItem(PURCHASE_DRAFT_KEY);
+    setFormData({
+      cus_id: '',
+      store_id: stores.length > 0 ? stores[0].storeid.toString() : '',
+      debit_account_id: '',
+      credit_account_id: '',
+      total_amount: '',
+      unloading_amount: '',
+      fare_amount: '',
+      transport_amount: '',
+      labour_amount: '',
+      include_labour: false,
+      discount: '',
+      cash_payment: '',
+      bank_payment: '',
+      payment_type: 'CASH',
+      vehicle_no: '',
+      invoice_number: '',
+      purchase_details: []
+    });
+    setFormSelectedCustomer(null);
+    setSelectedBankAccount(null);
+    setProductFormData({ qnty: '1', unit_rate: '', crate: '' });
+    setSelectedProduct(null);
   };
 
   const selectCustomer = (customer) => {
@@ -695,6 +798,7 @@ export default function PurchasesPage() {
 
       if (response.ok) {
         await fetchData();
+        sessionStorage.removeItem(PURCHASE_DRAFT_KEY);
         setCurrentView('list');
         setEditingPurchase(null);
         setFormData({
@@ -718,6 +822,8 @@ export default function PurchasesPage() {
         });
         setSelectedBankAccount(null);
         setFormSelectedCustomer(null);
+        setProductFormData({ qnty: '1', unit_rate: '', crate: '' });
+        setSelectedProduct(null);
       }
     } catch (error) {
       console.error('Error saving purchase:', error);
@@ -1052,8 +1158,15 @@ export default function PurchasesPage() {
                       setSelectedCustomer(newValue ? newValue.cus_id : '');
                     }}
                     filterOptions={(options, { inputValue }) => {
+                      const q = inputValue.toLowerCase();
+                      if (!q) return options;
                       return options.filter(option =>
-                        option.cus_name.toLowerCase().includes(inputValue.toLowerCase())
+                        option.cus_name?.toLowerCase().includes(q) ||
+                        option.cus_address?.toLowerCase().includes(q) ||
+                        option.cus_phone_no?.toLowerCase().includes(q) ||
+                        option.cus_phone_no2?.toLowerCase().includes(q) ||
+                        option.city?.city_name?.toLowerCase().includes(q) ||
+                        option.cus_reference?.toLowerCase().includes(q)
                       );
                     }}
                     renderInput={(params) => (
@@ -1401,6 +1514,17 @@ export default function PurchasesPage() {
                 </p>
               </div>
             </div>
+            {!editingPurchase && (
+              <Button
+                variant="outlined"
+                color="error"
+                size="small"
+                onClick={clearDraft}
+                sx={{ ml: 2 }}
+              >
+                Clear Draft
+              </Button>
+            )}
           </div>
         </div>
 
@@ -1545,8 +1669,25 @@ export default function PurchasesPage() {
                             onClick={() => setCustomerDropdownOpen(true)}
                           />
                         )}
+                        filterOptions={(options, { inputValue }) => {
+                          const q = inputValue.toLowerCase();
+                          if (!q) return options;
+                          return options.filter(option =>
+                            option.cus_name?.toLowerCase().includes(q) ||
+                            option.cus_address?.toLowerCase().includes(q) ||
+                            option.cus_phone_no?.toLowerCase().includes(q) ||
+                            option.cus_phone_no2?.toLowerCase().includes(q) ||
+                            option.city?.city_name?.toLowerCase().includes(q) ||
+                            option.cus_reference?.toLowerCase().includes(q)
+                          );
+                        }}
                         renderOption={(props, option) => {
                           const { key, ...optionProps } = props;
+                          const secondary = [
+                            option.cus_phone_no,
+                            option.city?.city_name,
+                            option.cus_reference
+                          ].filter(Boolean).join(' • ');
                           return (
                             <Box component="li" key={key} {...optionProps}>
                               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
@@ -1562,8 +1703,13 @@ export default function PurchasesPage() {
                                     {option.cus_name}
                                   </Typography>
                                   <Typography variant="caption" color="text.secondary">
-                                    {option.cus_phone_no} • Balance: {parseFloat(option.cus_balance || 0).toFixed(2)}
+                                    {secondary && `${secondary} • `}Balance: {parseFloat(option.cus_balance || 0).toFixed(2)}
                                   </Typography>
+                                  {option.cus_address && (
+                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                      {option.cus_address}
+                                    </Typography>
+                                  )}
                                 </Box>
                               </Box>
                             </Box>
@@ -1701,9 +1847,21 @@ export default function PurchasesPage() {
 
                   <Grid item xs={12} md={3}>
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                      <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-                        PRODUCT
-                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                          PRODUCT
+                        </Typography>
+                        <Tooltip title="Quick Add New Product">
+                          <IconButton
+                            size="small"
+                            color="primary"
+                            onClick={() => setShowAddProductDialog(true)}
+                            sx={{ p: 0.25, bgcolor: 'primary.light', color: 'primary.contrastText', '&:hover': { bgcolor: 'primary.main' } }}
+                          >
+                            <AddIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
                       <Autocomplete
                         options={products}
                         getOptionLabel={(option) => option.pro_title}
@@ -1758,7 +1916,7 @@ export default function PurchasesPage() {
                         size="small"
                         type="number"
                         value={productFormData.unit_rate}
-                        onChange={(e) => setProductFormData(prev => ({ ...prev, unit_rate: e.target.value }))}
+                        onChange={(e) => setProductFormData(prev => ({ ...prev, unit_rate: e.target.value, crate: e.target.value }))}
                         inputProps={{ step: 0.01, min: 0 }}
                         sx={{ width: 100, minWidth: 100 }}
                       />
@@ -1883,7 +2041,8 @@ export default function PurchasesPage() {
                                         ? {
                                           ...d,
                                           unit_rate: newUnitRate,
-                                          total_amount: (parseInt(d.qnty) * parseFloat(d.crate || newUnitRate)).toString()
+                                          crate: newUnitRate,
+                                          total_amount: (parseInt(d.qnty) * parseFloat(newUnitRate || 0)).toString()
                                         }
                                         : d
                                     );
@@ -2264,6 +2423,180 @@ export default function PurchasesPage() {
     <>
       {currentView === 'list' ? renderPurchaseListView() : renderPurchaseCreateView()}
 
+
+      {/* Quick Add Product Dialog */}
+      <Dialog
+        open={showAddProductDialog}
+        onClose={() => setShowAddProductDialog(false)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{
+          background: 'linear-gradient(135deg, #1976d2 0%, #9c27b0 100%)',
+          color: 'white', display: 'flex', alignItems: 'center', gap: 1.5
+        }}>
+          <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)' }}>
+            <PackageIcon />
+          </Avatar>
+          <Box>
+            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>Add New Product</Typography>
+            <Typography variant="caption" sx={{ opacity: 0.85 }}>Create a new product in your inventory</Typography>
+          </Box>
+          <IconButton onClick={() => setShowAddProductDialog(false)} sx={{ ml: 'auto', color: 'white' }}>
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+
+        <DialogContent sx={{ pt: 3, px: 3, pb: 1 }}>
+          <form id="quick-add-product-form" onSubmit={handleQuickAddProduct}>
+            <Grid container spacing={3}>
+              {/* Row 1: Title, Description, Category */}
+              <Grid item xs={12} md={4}>
+                <TextField
+                  label="Product Title *"
+                  fullWidth
+                  required
+                  value={newProductData.pro_title}
+                  onChange={(e) => setNewProductData(prev => ({ ...prev, pro_title: e.target.value }))}
+                />
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <TextField
+                  label="Description"
+                  fullWidth
+                  multiline
+                  rows={1}
+                  value={newProductData.pro_description}
+                  onChange={(e) => setNewProductData(prev => ({ ...prev, pro_description: e.target.value }))}
+                />
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <FormControl fullWidth required sx={{ minWidth: 180 }}>
+                  <InputLabel>Category *</InputLabel>
+                  <Select
+                    label="Category *"
+                    value={newProductData.cat_id}
+                    onChange={(e) => setNewProductData(prev => ({ ...prev, cat_id: e.target.value, sub_cat_id: '' }))}
+                  >
+                    {categories.map(cat => (
+                      <MenuItem key={cat.cat_id} value={cat.cat_id}>{cat.cat_name}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+
+              {/* Row 2: Subcategory, Cost Price, Sale Price */}
+              <Grid item xs={12} md={4}>
+                <FormControl fullWidth sx={{ minWidth: 180 }}>
+                  <InputLabel>Subcategory</InputLabel>
+                  <Select
+                    label="Subcategory"
+                    value={newProductData.sub_cat_id}
+                    onChange={(e) => setNewProductData(prev => ({ ...prev, sub_cat_id: e.target.value }))}
+                  >
+                    {subcategories
+                      .filter(sub => !newProductData.cat_id || sub.cat_id === newProductData.cat_id)
+                      .map(sub => (
+                        <MenuItem key={sub.sub_cat_id} value={sub.sub_cat_id}>{sub.sub_cat_name}</MenuItem>
+                      ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <TextField
+                  label="Cost Price"
+                  fullWidth
+                  type="number"
+                  inputProps={{ step: 0.01, min: 0 }}
+                  value={newProductData.pro_cost_price}
+                  onChange={(e) => setNewProductData(prev => ({ ...prev, pro_cost_price: e.target.value }))}
+                  InputProps={{ startAdornment: <InputAdornment position="start">Rs</InputAdornment> }}
+                />
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <TextField
+                  label="Sale Price"
+                  fullWidth
+                  type="number"
+                  inputProps={{ step: 0.01, min: 0 }}
+                  value={newProductData.pro_sale_price}
+                  onChange={(e) => setNewProductData(prev => ({ ...prev, pro_sale_price: e.target.value }))}
+                  InputProps={{ startAdornment: <InputAdornment position="start">Rs</InputAdornment> }}
+                />
+              </Grid>
+
+              {/* Row 3: Base Price, CRate, Stock Qty */}
+              <Grid item xs={12} md={4}>
+                <TextField
+                  label="Base Price"
+                  fullWidth
+                  type="number"
+                  inputProps={{ step: 0.01, min: 0 }}
+                  value={newProductData.pro_baser_price}
+                  onChange={(e) => setNewProductData(prev => ({ ...prev, pro_baser_price: e.target.value }))}
+                  InputProps={{ startAdornment: <InputAdornment position="start">Rs</InputAdornment> }}
+                />
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <TextField
+                  label="CRate"
+                  fullWidth
+                  type="number"
+                  inputProps={{ step: 0.01, min: 0 }}
+                  value={newProductData.pro_crate}
+                  onChange={(e) => setNewProductData(prev => ({ ...prev, pro_crate: e.target.value }))}
+                />
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <TextField
+                  label="Stock Quantity"
+                  fullWidth
+                  type="number"
+                  inputProps={{ min: 0 }}
+                  value={newProductData.pro_stock_qnty}
+                  onChange={(e) => setNewProductData(prev => ({ ...prev, pro_stock_qnty: e.target.value }))}
+                />
+              </Grid>
+
+              {/* Row 4: Unit, Packing */}
+              <Grid item xs={12} md={6}>
+                <TextField
+                  label="Unit"
+                  fullWidth
+                  placeholder="e.g. KG, Ton, Bag"
+                  value={newProductData.pro_unit}
+                  onChange={(e) => setNewProductData(prev => ({ ...prev, pro_unit: e.target.value }))}
+                />
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <TextField
+                  label="Packing"
+                  fullWidth
+                  placeholder="e.g. 50kg bag"
+                  value={newProductData.pro_packing}
+                  onChange={(e) => setNewProductData(prev => ({ ...prev, pro_packing: e.target.value }))}
+                />
+              </Grid>
+            </Grid>
+          </form>
+        </DialogContent>
+
+        <DialogActions sx={{ px: 3, pb: 3, pt: 2, gap: 1 }}>
+          <Button variant="outlined" onClick={() => setShowAddProductDialog(false)}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            form="quick-add-product-form"
+            variant="contained"
+            startIcon={isSubmittingProduct ? <CircularProgress size={16} color="inherit" /> : <SaveIcon />}
+            disabled={isSubmittingProduct}
+          >
+            {isSubmittingProduct ? 'Creating...' : 'Create Product'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Add Customer Modal */}
       <Dialog

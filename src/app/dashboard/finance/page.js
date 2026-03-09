@@ -21,6 +21,7 @@ import {
   Banknote
 } from 'lucide-react';
 import DashboardLayout from '../components/dashboard-layout';
+import FingerprintAuthModal from '@/components/FingerprintAuthModal';
 
 // Material-UI imports
 import {
@@ -72,6 +73,8 @@ export default function FinancePage() {
   const [loading, setLoading] = useState(true);
   const [showLedgerForm, setShowLedgerForm] = useState(false);
   const [editingLedger, setEditingLedger] = useState(null);
+  const [showFpModal, setShowFpModal] = useState(false);
+  const [pendingAction, setPendingAction] = useState(null); // 'add' | { type: 'edit', entry }
 
   // Filter states
   const [searchTerm, setSearchTerm] = useState('');
@@ -306,6 +309,27 @@ export default function FinancePage() {
     }
   };
 
+  // Fingerprint gate — called before opening the form
+  const requireFingerprint = (action) => {
+    setPendingAction(action);
+    setShowFpModal(true);
+  };
+
+  const onFingerprintSuccess = () => {
+    setShowFpModal(false);
+    if (pendingAction === 'add') {
+      setShowLedgerForm(true);
+    } else if (pendingAction?.type === 'edit') {
+      handleEdit(pendingAction.entry);
+    }
+    setPendingAction(null);
+  };
+
+  const onFingerprintCancel = () => {
+    setShowFpModal(false);
+    setPendingAction(null);
+  };
+
   const clearFilters = () => {
     setSearchTerm('');
     setSelectedCustomer('');
@@ -350,7 +374,7 @@ export default function FinancePage() {
             <Button
               variant="contained"
               startIcon={<Plus />}
-              onClick={() => setShowLedgerForm(true)}
+              onClick={() => requireFingerprint('add')}
               sx={{
                 background: 'linear-gradient(45deg, #4caf50, #2e7d32)',
                 '&:hover': {
@@ -750,7 +774,7 @@ export default function FinancePage() {
                               <Tooltip title="Edit Entry">
                                 <IconButton
                                   size="small"
-                                  onClick={() => handleEdit(entry)}
+                                  onClick={() => requireFingerprint({ type: 'edit', entry })}
                                   sx={{ color: 'primary.main' }}
                                 >
                                   <Edit size={16} />
@@ -777,6 +801,13 @@ export default function FinancePage() {
           </Card>
         </Box>
       </Container>
+
+      {/* Fingerprint Authentication Modal */}
+      <FingerprintAuthModal
+        open={showFpModal}
+        onSuccess={onFingerprintSuccess}
+        onCancel={onFingerprintCancel}
+      />
 
       {/* Ledger Form Modal */}
       <Dialog

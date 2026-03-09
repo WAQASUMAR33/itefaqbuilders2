@@ -66,6 +66,8 @@ import {
   Info as InfoIcon
 } from '@mui/icons-material';
 
+import { shareReceiptViaWhatsApp, WHATSAPP_SVG_PATH } from '@/lib/shareReport';
+
 function SalesPageContent() {
   const searchParams = useSearchParams();
 
@@ -254,6 +256,7 @@ function SalesPageContent() {
   // Load Order state
   const [loadOrderDialogOpen, setLoadOrderDialogOpen] = useState(false);
   const [orderSearchTerm, setOrderSearchTerm] = useState('');
+  const [isSearchingOrder, setIsSearchingOrder] = useState(false);
 
   // Load Quotation state
   const [loadQuotationDialogOpen, setLoadQuotationDialogOpen] = useState(false);
@@ -261,6 +264,7 @@ function SalesPageContent() {
 
   // Customer creation popup state
   const [customerPopupOpen, setCustomerPopupOpen] = useState(false);
+  const [isEditingCustomer, setIsEditingCustomer] = useState(false);
   const [customerCategories, setCustomerCategories] = useState([]);
   const [cities, setCities] = useState([]);
   const [newCustomer, setNewCustomer] = useState({
@@ -514,7 +518,7 @@ function SalesPageContent() {
 
   // Calculate total amount
   const calculateTotalAmount = () => {
-    return productTableData.reduce((total, product) => total + product.amount, 0);
+    return productTableData.reduce((total, product) => total + (parseFloat(product.amount) || 0), 0);
   };
 
   // Calculate subtotal (products + transport)
@@ -1019,6 +1023,7 @@ function SalesPageContent() {
 
   const handleCloseCustomerPopup = () => {
     setCustomerPopupOpen(false);
+    setIsEditingCustomer(false);
     setNewCustomer({
       cus_name: '',
       cus_phone_no: '',
@@ -1034,6 +1039,88 @@ function SalesPageContent() {
       name_urdu: '',
       city_id: ''
     });
+  };
+
+  const handleOpenEditCustomer = () => {
+    if (!formSelectedCustomer) return;
+    setNewCustomer({
+      cus_name: formSelectedCustomer.cus_name || '',
+      cus_phone_no: formSelectedCustomer.cus_phone_no || '',
+      cus_phone_no2: formSelectedCustomer.cus_phone_no2 || '',
+      cus_address: formSelectedCustomer.cus_address || '',
+      cus_reference: formSelectedCustomer.cus_reference || '',
+      cus_account_info: formSelectedCustomer.cus_account_info || '',
+      other: formSelectedCustomer.other || '',
+      cus_category: formSelectedCustomer.cus_category || '',
+      cus_type: formSelectedCustomer.cus_type || '',
+      cus_balance: formSelectedCustomer.cus_balance || 0,
+      CNIC: formSelectedCustomer.CNIC || '',
+      NTN_NO: formSelectedCustomer.NTN_NO || '',
+      name_urdu: formSelectedCustomer.name_urdu || '',
+      city_id: formSelectedCustomer.city_id || ''
+    });
+    setIsEditingCustomer(true);
+    setCustomerPopupOpen(true);
+  };
+
+  const handleUpdateCustomer = async () => {
+    if (!newCustomer.cus_name.trim()) {
+      showSnackbar('Customer name is required', 'error');
+      return;
+    }
+    if (!newCustomer.cus_phone_no.trim()) {
+      showSnackbar('Phone number is required', 'error');
+      return;
+    }
+    if (!newCustomer.cus_category) {
+      showSnackbar('Customer category is required', 'error');
+      return;
+    }
+    if (!newCustomer.cus_type) {
+      showSnackbar('Customer type is required', 'error');
+      return;
+    }
+
+    try {
+      const customerData = {
+        id: formSelectedCustomer.cus_id,
+        cus_name: newCustomer.cus_name.trim(),
+        cus_phone_no: newCustomer.cus_phone_no.trim(),
+        cus_phone_no2: newCustomer.cus_phone_no2?.trim() || '',
+        cus_address: newCustomer.cus_address?.trim() || '',
+        cus_reference: newCustomer.cus_reference?.trim() || '',
+        cus_account_info: newCustomer.cus_account_info?.trim() || '',
+        other: newCustomer.other?.trim() || '',
+        cus_category: newCustomer.cus_category,
+        cus_type: newCustomer.cus_type,
+        cus_balance: parseFloat(newCustomer.cus_balance) || 0,
+        CNIC: newCustomer.CNIC?.trim() || '',
+        NTN_NO: newCustomer.NTN_NO?.trim() || '',
+        name_urdu: newCustomer.name_urdu?.trim() || '',
+        city_id: newCustomer.city_id || null
+      };
+
+      const response = await fetch('/api/customers', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(customerData),
+      });
+
+      if (response.ok) {
+        const updatedCustomer = await response.json();
+        showSnackbar('Customer updated successfully', 'success');
+        handleCloseCustomerPopup();
+        await fetchData();
+        // Update the selected customer with fresh data
+        setFormSelectedCustomer(updatedCustomer);
+      } else {
+        const errorData = await response.json();
+        showSnackbar(errorData.error || 'Error updating customer', 'error');
+      }
+    } catch (error) {
+      console.error('Error updating customer:', error);
+      showSnackbar('Error updating customer', 'error');
+    }
   };
 
   const handleCreateCustomer = async () => {
@@ -1387,6 +1474,79 @@ function SalesPageContent() {
     });
   };
 
+  // Handle searching for an order to load
+  const handleSearchOrder = async () => {
+    if (!orderSearchTerm.trim()) {
+      showSnackbar('Please enter an Order Number', 'warning');
+      return;
+    }
+
+    try {
+      setIsSearchingOrder(true);
+      const response = await fetch(`/api/sales?id=${orderSearchTerm}`);
+
+      if (!response.ok) {
+        throw new Error('Order not found');
+      }
+
+      const orderData = await response.json();
+
+      if (orderData.bill_type !== 'ORDER') {
+        showSnackbar('The found record is not an Order', 'warning');
+        return;
+      }
+
+      // Populate form with order data
+
+      // 1. Set Customer
+      if (orderData.customer) {
+        // Find full customer object from customers list if possible to ensure we have all data
+        const fullCustomer = customers.find(c => c.cus_id === orderData.cus_id) || orderData.customer;
+        setFormSelectedCustomer(fullCustomer);
+      }
+
+      // 2. Set Store (if applicable)
+      if (orderData.store_id) {
+        const store = stores.find(s => s.storeid === orderData.store_id);
+        if (store) setFormSelectedStore(store);
+      }
+
+      // 3. Set Products
+      if (orderData.sale_details && Array.isArray(orderData.sale_details)) {
+        const products = orderData.sale_details.map(detail => ({
+          id: Date.now() + Math.random(),
+          pro_id: detail.pro_id,
+          pro_title: detail.product?.pro_title || detail.product?.pro_name || 'Unknown Product',
+          storeid: orderData.store_id,
+          store_name: stores.find(s => s.storeid === orderData.store_id)?.store_name || 'Store',
+          quantity: parseFloat(detail.qnty) || 0,
+          rate: parseFloat(detail.unit_rate) || 0,
+          amount: parseFloat(detail.total_amount) || 0,
+          stock: detail.product?.pro_stock_qnty || 0 // Note: This might need a fresh fetch for latest stock
+        }));
+        setProductTableData(products);
+      }
+
+      // 4. Set Payment Data (Notes, Discount, etc.)
+      setPaymentData(prev => ({
+        ...prev,
+        discount: parseFloat(orderData.discount) || 0,
+        notes: `Converted from Order #${orderData.sale_id}. ${orderData.reference || ''}`,
+        deliveryCharges: parseFloat(orderData.shipping_amount) || 0,
+        labour: 0 // Reset labour as it might be specific to the new sale
+      }));
+
+      showSnackbar('Order loaded successfully!', 'success');
+      setOrderSearchTerm(''); // Clear search field
+
+    } catch (error) {
+      console.error('Error loading order:', error);
+      showSnackbar('Failed to load order. Please check the Order Number.', 'error');
+    } finally {
+      setIsSearchingOrder(false);
+    }
+  };
+
   // Handle return submission
   const handleSubmitReturn = async () => {
     try {
@@ -1448,6 +1608,54 @@ function SalesPageContent() {
   // Current bill data for printing (from create view)
   const [currentBillData, setCurrentBillData] = useState(null);
   const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
+  const [sendingReceiptWhatsApp, setSendingReceiptWhatsApp] = useState(false);
+  const [sendingBillWhatsApp, setSendingBillWhatsApp] = useState(false);
+
+  const handleShareReceiptWhatsApp = async (billData) => {
+    if (!billData) return;
+    setSendingReceiptWhatsApp(true);
+    try {
+      const result = await shareReceiptViaWhatsApp('printable-invoice-a4', {
+        filename: `invoice-${billData.sale_id || 'receipt'}.pdf`,
+        title: 'Sales Receipt',
+        saleId: billData.sale_id || '',
+        customerName: billData.customer?.cus_name || '',
+        phone: billData.customer?.cus_phone_no || '',
+      });
+      if (result?.sent) {
+        showSnackbar('Invoice sent to customer via WhatsApp', 'success');
+      } else if (result?.downloaded) {
+        showSnackbar('PDF downloaded — tap the attachment icon in WhatsApp to send it', 'info');
+      }
+    } catch (e) {
+      showSnackbar('Could not send via WhatsApp: ' + (e?.message || String(e)), 'error');
+    } finally {
+      setSendingReceiptWhatsApp(false);
+    }
+  };
+
+  const handleShareBillWhatsApp = async (billData) => {
+    if (!billData) return;
+    setSendingBillWhatsApp(true);
+    try {
+      const result = await shareReceiptViaWhatsApp('printable-invoice', {
+        filename: `invoice-${billData.sale_id || 'receipt'}.pdf`,
+        title: 'Sales Receipt',
+        saleId: billData.sale_id || '',
+        customerName: billData.customer?.cus_name || '',
+        phone: billData.customer?.cus_phone_no || '',
+      });
+      if (result?.sent) {
+        showSnackbar('Invoice sent to customer via WhatsApp', 'success');
+      } else if (result?.downloaded) {
+        showSnackbar('PDF downloaded — tap the attachment icon in WhatsApp to send it', 'info');
+      }
+    } catch (e) {
+      showSnackbar('Could not send via WhatsApp: ' + (e?.message || String(e)), 'error');
+    } finally {
+      setSendingBillWhatsApp(false);
+    }
+  };
 
   // Handle print bill with mode (A4 or Thermal)
   const handlePrintBill = (mode = 'A4', fromDialog = false) => {
@@ -1805,7 +2013,7 @@ function SalesPageContent() {
   // Render Sales Create View
   const renderSalesCreateView = () => (
     <DashboardLayout>
-      <Container maxWidth="xl" sx={{ py: 1 }}>
+      <Container maxWidth={false} sx={{ py: 1 }}>
         <Stack spacing={2}>
           {/* Header */}
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
@@ -1888,6 +2096,42 @@ function SalesPageContent() {
           {/* Main Form */}
           <Card>
             <CardContent sx={{ p: 2 }}>
+              {/* Order Search Row */}
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3, p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
+                <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'text.primary', whiteSpace: 'nowrap' }}>
+                  Load Order:
+                </Typography>
+                <TextField
+                  size="small"
+                  placeholder="Enter Order Number (e.g. 123)"
+                  value={orderSearchTerm}
+                  onChange={(e) => setOrderSearchTerm(e.target.value)}
+                  sx={{ width: 250, bgcolor: 'white' }}
+                  InputProps={{
+                    endAdornment: (
+                      <SearchIcon color="action" fontSize="small" />
+                    ),
+                  }}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      handleSearchOrder();
+                    }
+                  }}
+                />
+                <Button
+                  variant="contained"
+                  size="small"
+                  onClick={handleSearchOrder}
+                  disabled={isSearchingOrder || !orderSearchTerm}
+                  sx={{ bgcolor: '#1976d2', color: 'white', '&:hover': { bgcolor: '#1565c0' } }}
+                >
+                  {isSearchingOrder ? <CircularProgress size={20} color="inherit" /> : 'Load'}
+                </Button>
+                <Typography variant="caption" sx={{ color: 'text.secondary', ml: 1 }}>
+                  Enter an order number to populate this form with order details.
+                </Typography>
+              </Box>
+
               {/* First Row - Date, Customer, Reference */}
               <Grid container spacing={2} sx={{ mb: 2 }}>
                 <Grid item xs={12} md={2}>
@@ -1941,6 +2185,15 @@ function SalesPageContent() {
                           }}>
                             Balance: {parseFloat(formSelectedCustomer.cus_balance || 0).toFixed(2)}
                           </Box>
+                          <Tooltip title="Edit Customer">
+                            <IconButton
+                              size="small"
+                              onClick={handleOpenEditCustomer}
+                              sx={{ color: 'warning.main', '&:hover': { bgcolor: 'warning.light' } }}
+                            >
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
                           <Button
                             size="small"
                             variant="outlined"
@@ -1982,21 +2235,61 @@ function SalesPageContent() {
                         setFormSelectedCustomer(newValue);
                       }}
                       isOptionEqualToValue={(option, value) => option.cus_id === value?.cus_id}
-                      renderInput={(params) => {
-                        console.log('🔍 renderInput called, customers length:', customers.length);
-                        return (
-                          <TextField
-                            {...params}
-                            placeholder="Select customer"
-                            sx={{ bgcolor: 'white', minWidth: 250, '& .MuiInputBase-input': { fontWeight: formSelectedCustomer ? 'bold' : 'normal' } }}
-                          />
+                      filterOptions={(options, { inputValue }) => {
+                        const q = inputValue.toLowerCase();
+                        if (!q) return options;
+                        return options.filter(option =>
+                          option.cus_name?.toLowerCase().includes(q) ||
+                          option.cus_address?.toLowerCase().includes(q) ||
+                          option.cus_phone_no?.toLowerCase().includes(q) ||
+                          option.cus_phone_no2?.toLowerCase().includes(q) ||
+                          option.city?.city_name?.toLowerCase().includes(q) ||
+                          option.cus_reference?.toLowerCase().includes(q)
                         );
                       }}
+                      renderOption={(props, option) => {
+                        const { key, ...optionProps } = props;
+                        const secondary = [
+                          option.cus_phone_no,
+                          option.city?.city_name,
+                          option.cus_reference
+                        ].filter(Boolean).join(' • ');
+                        return (
+                          <Box component="li" key={key} {...optionProps}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                              <Box sx={{ flex: 1 }}>
+                                <Typography
+                                  variant="body2"
+                                  sx={{
+                                    fontWeight: formSelectedCustomer?.cus_id === option.cus_id ? 'bold' : 'normal',
+                                    color: formSelectedCustomer?.cus_id === option.cus_id ? 'primary.main' : 'text.primary'
+                                  }}
+                                >
+                                  {option.cus_name}
+                                </Typography>
+                                {secondary && (
+                                  <Typography variant="caption" color="text.secondary">
+                                    {secondary}
+                                  </Typography>
+                                )}
+                                {option.cus_address && (
+                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                    {option.cus_address}
+                                  </Typography>
+                                )}
+                              </Box>
+                            </Box>
+                          </Box>
+                        );
+                      }}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          placeholder="Search by name, phone, city, address..."
+                          sx={{ bgcolor: 'white', minWidth: 250, '& .MuiInputBase-input': { fontWeight: formSelectedCustomer ? 'bold' : 'normal' } }}
+                        />
+                      )}
                     />
-                    {/* Debug info */}
-                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                      Debug: {customers.length} total customers, {customers.filter(c => c.customer_category?.cus_cat_title?.toLowerCase().includes('customer')).length} customers (filtered)
-                    </Typography>
                   </Box>
                 </Grid>
                 <Grid item xs={12} md={1.5}>
@@ -2083,7 +2376,7 @@ function SalesPageContent() {
                       fullWidth
                       size="small"
                       type="number"
-                      value={productFormData.quantity}
+                      value={productFormData.quantity === 0 ? '' : productFormData.quantity}
                       onChange={(e) => handleQuantityChange(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -2116,7 +2409,7 @@ function SalesPageContent() {
                       fullWidth
                       size="small"
                       type="number"
-                      value={productFormData.rate}
+                      value={productFormData.rate === 0 ? '' : productFormData.rate}
                       onChange={(e) => handleRateChange(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -2272,7 +2565,7 @@ function SalesPageContent() {
                               }}
                             />
                           </TableCell>
-                          <TableCell sx={{ py: 1 }}>{product.amount.toFixed(2)}</TableCell>
+                          <TableCell sx={{ py: 1 }}>{parseFloat(product.amount || 0).toFixed(2)}</TableCell>
                           <TableCell sx={{ py: 1 }}>
                             <IconButton
                               size="small"
@@ -2331,7 +2624,7 @@ function SalesPageContent() {
                       fullWidth
                       label="Amount"
                       type="number"
-                      value={newTransport.amount}
+                      value={newTransport.amount === 0 ? '' : newTransport.amount}
                       onChange={(e) => setNewTransport(prev => ({ ...prev, amount: parseFloat(e.target.value) || 0 }))}
                       placeholder="0.00"
                       size="small"
@@ -2403,7 +2696,7 @@ function SalesPageContent() {
                           fullWidth
                           size="small"
                           type="number"
-                          value={paymentData.cash}
+                          value={paymentData.cash === 0 ? '' : paymentData.cash}
                           onChange={(e) => handlePaymentDataChange('cash', e.target.value)}
                           sx={{ bgcolor: 'white', '& .MuiInputBase-input': { padding: '8px' } }}
                           placeholder="0"
@@ -2419,7 +2712,7 @@ function SalesPageContent() {
                           fullWidth
                           size="small"
                           type="number"
-                          value={paymentData.bank}
+                          value={paymentData.bank === 0 ? '' : paymentData.bank}
                           onChange={(e) => handlePaymentDataChange('bank', e.target.value)}
                           sx={{ bgcolor: 'white', '& .MuiInputBase-input': { padding: '8px' } }}
                           placeholder="0"
@@ -2519,7 +2812,7 @@ function SalesPageContent() {
                     <TextField
                       size="small"
                       type="number"
-                      value={paymentData.labour}
+                      value={paymentData.labour === 0 ? '' : paymentData.labour}
                       onChange={(e) => handlePaymentDataChange('labour', e.target.value)}
                       sx={{ bgcolor: 'white', '& .MuiInputBase-input': { padding: '8px' }, flex: 1 }}
                       placeholder="0"
@@ -2534,7 +2827,7 @@ function SalesPageContent() {
                     <TextField
                       size="small"
                       type="number"
-                      value={(parseFloat(paymentData.deliveryCharges || 0) + calculateTransportTotal()).toFixed(2)}
+                      value={(parseFloat(paymentData.deliveryCharges || 0) + calculateTransportTotal()) === 0 ? '' : (parseFloat(paymentData.deliveryCharges || 0) + calculateTransportTotal()).toFixed(2)}
                       onChange={(e) => {
                         // Calculate delivery charges by subtracting transport from total
                         const totalValue = parseFloat(e.target.value) || 0;
@@ -2560,7 +2853,7 @@ function SalesPageContent() {
                     <TextField
                       size="small"
                       type="number"
-                      value={paymentData.discount}
+                      value={paymentData.discount === 0 ? '' : paymentData.discount}
                       onChange={(e) => handlePaymentDataChange('discount', e.target.value)}
                       sx={{ bgcolor: 'white', '& .MuiInputBase-input': { padding: '8px' }, flex: 1 }}
                       placeholder="0"
@@ -2970,14 +3263,14 @@ function SalesPageContent() {
                   </Typography>
                 </Box>
                 {/* Cash Payment */}
-                {currentBillData.cash_payment > 0 && (
+                {parseFloat(currentBillData.cash_payment || 0) > 0 && (
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Typography sx={{ fontSize: '10px' }}>Cash Payment</Typography>
                     <Typography sx={{ fontSize: '10px' }}>{parseFloat(currentBillData.cash_payment || 0).toFixed(2)}</Typography>
                   </Box>
                 )}
                 {/* Bank Payment */}
-                {currentBillData.bank_payment > 0 && (
+                {parseFloat(currentBillData.bank_payment || 0) > 0 && (
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Typography sx={{ fontSize: '10px' }}>Bank Payment ({currentBillData.bank_title || 'Bank'})</Typography>
                     <Typography sx={{ fontSize: '10px' }}>{parseFloat(currentBillData.bank_payment || 0).toFixed(2)}</Typography>
@@ -3261,6 +3554,28 @@ function SalesPageContent() {
             >
               Print Thermal
             </Button>
+            <Button
+              variant="contained"
+              disabled={sendingReceiptWhatsApp}
+              onClick={() => handleShareReceiptWhatsApp(currentBillData)}
+              startIcon={
+                sendingReceiptWhatsApp
+                  ? <CircularProgress size={16} sx={{ color: 'white' }} />
+                  : (
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="white">
+                      <path d={WHATSAPP_SVG_PATH} />
+                    </svg>
+                  )
+              }
+              sx={{
+                minWidth: 150,
+                bgcolor: '#25D366',
+                '&:hover': { bgcolor: '#1ebe5d' },
+                '&:disabled': { bgcolor: '#a5d6a7' },
+              }}
+            >
+              {sendingReceiptWhatsApp ? 'Generating…' : 'WhatsApp'}
+            </Button>
           </DialogActions>
         </Dialog>
 
@@ -3446,7 +3761,7 @@ function SalesPageContent() {
 
   const renderSalesListView = () => (
     <DashboardLayout>
-      <Container maxWidth="xl" sx={{ py: 4 }}>
+      <Container maxWidth={false} sx={{ py: 4 }}>
         <Stack spacing={4}>
           {/* Header */}
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -3580,61 +3895,70 @@ function SalesPageContent() {
           {/* Sales Filter */}
           <Card sx={{ mb: 3 }}>
             <CardContent sx={{ p: 2 }}>
-              <Typography variant="h6" sx={{ mb: 2, fontWeight: 'semibold' }}>
-                Filter Sales
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                <Typography variant="h6" sx={{ fontWeight: 'semibold' }}>
+                  Filter Sales
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Showing {filteredSales.length} of {sales.length} sales
+                </Typography>
+              </Box>
+
+              {/* All filter inputs — uniform md=3 (25% each, 4 per row) */}
               <Grid container spacing={2}>
-                <Grid item xs={12} md={3}>
+
+                {/* Row 1 */}
+                <Grid item xs={12} sm={6} md={3}>
                   <TextField
                     fullWidth
                     size="small"
                     label="Search"
-                    placeholder="Search by Sale ID, Customer, or Reference"
+                    placeholder="Sale ID, Customer, Reference…"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
+                    sx={{ minWidth: 200 }}
                     InputProps={{
                       startAdornment: (
                         <InputAdornment position="start">
-                          <SearchIcon />
+                          <SearchIcon fontSize="small" />
                         </InputAdornment>
                       ),
                     }}
                   />
                 </Grid>
-                <Grid item xs={12} md={3}>
+
+                <Grid item xs={12} sm={6} md={3}>
                   <Autocomplete
                     fullWidth
                     size="small"
-                    options={customers.filter(customer => {
-                      // Filter for customers with category "Customer"
-                      const isCustomer = customer.customer_category &&
-                        customer.customer_category.cus_cat_title &&
-                        customer.customer_category.cus_cat_title.toLowerCase().includes('customer');
-                      console.log('🔍 Sales List Customer filtering:', customer.cus_name, 'isCustomer:', isCustomer, 'customer_category:', customer.customer_category);
-                      return isCustomer;
-                    })}
+                    options={customers.filter(c =>
+                      c.customer_category?.cus_cat_title?.toLowerCase().includes('customer')
+                    )}
                     getOptionLabel={(option) => option.cus_name || ''}
                     value={customers.find(c => c.cus_id.toString() === filterCustomer) || null}
-                    onChange={(event, newValue) => {
-                      console.log('🔍 Sales List Customer selected:', newValue);
-                      setFilterCustomer(newValue ? newValue.cus_id.toString() : '');
-                    }}
+                    onChange={(_, newValue) => setFilterCustomer(newValue ? newValue.cus_id.toString() : '')}
                     renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        label="Customer"
-                        placeholder="Select customer"
-                        sx={{ minWidth: 250 }}
-                      />
+                      <TextField {...params} label="Customer" placeholder="Select customer" sx={{ minWidth: 200 }} />
                     )}
                   />
-                  {/* Debug info */}
-                  <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                    Debug: {customers.length} total customers, {customers.filter(c => c.customer_category?.cus_cat_title?.toLowerCase().includes('customer')).length} customers
-                  </Typography>
                 </Grid>
-                <Grid item xs={12} md={2}>
-                  <FormControl fullWidth size="small" sx={{ minWidth: 150 }}>
+
+                <Grid item xs={12} sm={6} md={3}>
+                  <Autocomplete
+                    fullWidth
+                    size="small"
+                    options={stores}
+                    getOptionLabel={(option) => option.store_name || ''}
+                    value={stores.find(s => s.storeid.toString() === filterStore) || null}
+                    onChange={(_, newValue) => setFilterStore(newValue ? newValue.storeid.toString() : '')}
+                    renderInput={(params) => (
+                      <TextField {...params} label="Store" placeholder="Select store" sx={{ minWidth: 200 }} />
+                    )}
+                  />
+                </Grid>
+
+                <Grid item xs={12} sm={6} md={3}>
+                  <FormControl fullWidth size="small" sx={{ minWidth: 200 }}>
                     <InputLabel>Bill Type</InputLabel>
                     <Select
                       value={filterBillType}
@@ -3648,27 +3972,10 @@ function SalesPageContent() {
                     </Select>
                   </FormControl>
                 </Grid>
-                <Grid item xs={12} md={3}>
-                  <Autocomplete
-                    fullWidth
-                    size="small"
-                    options={stores}
-                    getOptionLabel={(option) => option.store_name || ''}
-                    value={stores.find(s => s.storeid.toString() === filterStore) || null}
-                    onChange={(event, newValue) => {
-                      setFilterStore(newValue ? newValue.storeid.toString() : '');
-                    }}
-                    renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        label="Store"
-                        placeholder="Select store"
-                      />
-                    )}
-                  />
-                </Grid>
-                <Grid item xs={12} md={2}>
-                  <FormControl fullWidth size="small">
+
+                {/* Row 2 */}
+                <Grid item xs={12} sm={6} md={3}>
+                  <FormControl fullWidth size="small" sx={{ minWidth: 200 }}>
                     <InputLabel>Payment Type</InputLabel>
                     <Select
                       value={filterPaymentType}
@@ -3681,60 +3988,9 @@ function SalesPageContent() {
                     </Select>
                   </FormControl>
                 </Grid>
-              </Grid>
-              <Grid container spacing={2} sx={{ mt: 1 }}>
-                <Grid item xs={12} md={2}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    type="date"
-                    label="From Date"
-                    value={dateFrom}
-                    onChange={(e) => setDateFrom(e.target.value)}
-                    InputLabelProps={{ shrink: true }}
-                  />
-                </Grid>
-                <Grid item xs={12} md={2}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    type="date"
-                    label="To Date"
-                    value={dateTo}
-                    onChange={(e) => setDateTo(e.target.value)}
-                    InputLabelProps={{ shrink: true }}
-                  />
-                </Grid>
-                <Grid item xs={12} md={2}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    type="number"
-                    label="Min Amount"
-                    placeholder="0"
-                    value={filterMinAmount}
-                    onChange={(e) => setFilterMinAmount(e.target.value)}
-                    InputProps={{
-                      startAdornment: <InputAdornment position="start">Rs</InputAdornment>,
-                    }}
-                  />
-                </Grid>
-                <Grid item xs={12} md={2}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    type="number"
-                    label="Max Amount"
-                    placeholder="0"
-                    value={filterMaxAmount}
-                    onChange={(e) => setFilterMaxAmount(e.target.value)}
-                    InputProps={{
-                      startAdornment: <InputAdornment position="start">Rs</InputAdornment>,
-                    }}
-                  />
-                </Grid>
-                <Grid item xs={12} md={2}>
-                  <FormControl fullWidth size="small">
+
+                <Grid item xs={12} sm={6} md={3}>
+                  <FormControl fullWidth size="small" sx={{ minWidth: 200 }}>
                     <InputLabel>Balance Status</InputLabel>
                     <Select
                       value={filterBalanceStatus}
@@ -3748,31 +4004,91 @@ function SalesPageContent() {
                     </Select>
                   </FormControl>
                 </Grid>
+
+                <Grid item xs={12} sm={6} md={3}>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    type="date"
+                    label="From Date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    InputLabelProps={{ shrink: true }}
+                    sx={{ minWidth: 200 }}
+                  />
+                </Grid>
+
+                <Grid item xs={12} sm={6} md={3}>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    type="date"
+                    label="To Date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    InputLabelProps={{ shrink: true }}
+                    sx={{ minWidth: 200 }}
+                  />
+                </Grid>
+
+                {/* Row 3 */}
+                <Grid item xs={12} sm={6} md={3}>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    type="number"
+                    label="Min Amount"
+                    placeholder="0"
+                    value={filterMinAmount}
+                    onChange={(e) => setFilterMinAmount(e.target.value)}
+                    sx={{ minWidth: 200 }}
+                    InputProps={{
+                      startAdornment: <InputAdornment position="start">Rs</InputAdornment>,
+                    }}
+                  />
+                </Grid>
+
+                <Grid item xs={12} sm={6} md={3}>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    type="number"
+                    label="Max Amount"
+                    placeholder="0"
+                    value={filterMaxAmount}
+                    onChange={(e) => setFilterMaxAmount(e.target.value)}
+                    sx={{ minWidth: 200 }}
+                    InputProps={{
+                      startAdornment: <InputAdornment position="start">Rs</InputAdornment>,
+                    }}
+                  />
+                </Grid>
+
+                <Grid item xs={12} sm={6} md={3} sx={{ display: 'flex', alignItems: 'center' }}>
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    size="medium"
+                    onClick={() => {
+                      setSearchTerm('');
+                      setFilterCustomer('');
+                      setFilterBillType('');
+                      setFilterStore('');
+                      setFilterPaymentType('');
+                      setFilterMinAmount('');
+                      setFilterMaxAmount('');
+                      setFilterBalanceStatus('');
+                      setDateFrom('');
+                      setDateTo('');
+                    }}
+                    startIcon={<ClearIcon />}
+                    sx={{ minWidth: 200, height: 40 }}
+                  >
+                    Clear Filters
+                  </Button>
+                </Grid>
+
               </Grid>
-              <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
-                <Button
-                  variant="outlined"
-                  size="small"
-                  onClick={() => {
-                    setSearchTerm('');
-                    setFilterCustomer('');
-                    setFilterBillType('');
-                    setFilterStore('');
-                    setFilterPaymentType('');
-                    setFilterMinAmount('');
-                    setFilterMaxAmount('');
-                    setFilterBalanceStatus('');
-                    setDateFrom('');
-                    setDateTo('');
-                  }}
-                  startIcon={<ClearIcon />}
-                >
-                  Clear Filters
-                </Button>
-                <Typography variant="body2" color="text.secondary" sx={{ alignSelf: 'center', ml: 2 }}>
-                  Showing {filteredSales.length} of {sales.length} sales
-                </Typography>
-              </Box>
             </CardContent>
           </Card>
 
@@ -3784,7 +4100,6 @@ function SalesPageContent() {
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 Showing {filteredSales.length} of {sales.length} sales
-                {sales.length > 0 && ` (Debug: Sales loaded successfully)`}
               </Typography>
             </Box>
             <TableContainer sx={{ overflowX: 'auto', maxWidth: '100%' }}>
@@ -4065,14 +4380,14 @@ function SalesPageContent() {
               width: 48,
               height: 48
             }}>
-              <PersonIcon />
+              {isEditingCustomer ? <EditIcon /> : <PersonIcon />}
             </Avatar>
             <Box>
               <Typography variant="h5" component="div" sx={{ fontWeight: 'bold' }}>
-                Add New Customer
+                {isEditingCustomer ? 'Edit Customer' : 'Add New Customer'}
               </Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>
-                Create a new customer profile
+                {isEditingCustomer ? 'Update customer information' : 'Create a new customer profile'}
               </Typography>
             </Box>
           </Box>
@@ -4410,11 +4725,14 @@ function SalesPageContent() {
             Cancel
           </Button>
           <Button
-            onClick={handleCreateCustomer}
+            onClick={isEditingCustomer ? handleUpdateCustomer : handleCreateCustomer}
             variant="contained"
-            sx={{ bgcolor: '#6f42c1', '&:hover': { bgcolor: '#5a2d91' } }}
+            sx={isEditingCustomer
+              ? { bgcolor: '#ed6c02', '&:hover': { bgcolor: '#c55a00' } }
+              : { bgcolor: '#6f42c1', '&:hover': { bgcolor: '#5a2d91' } }
+            }
           >
-            Create Customer
+            {isEditingCustomer ? 'Update Customer' : 'Create Customer'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -4738,6 +5056,28 @@ function SalesPageContent() {
             onClick={handlePrintBill}
           >
             Print Bill
+          </Button>
+          <Button
+            variant="contained"
+            disabled={sendingBillWhatsApp}
+            onClick={() => handleShareBillWhatsApp(selectedBill)}
+            startIcon={
+              sendingBillWhatsApp
+                ? <CircularProgress size={16} sx={{ color: 'white' }} />
+                : (
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="white">
+                    <path d={WHATSAPP_SVG_PATH} />
+                  </svg>
+                )
+            }
+            sx={{
+              minWidth: 150,
+              bgcolor: '#25D366',
+              '&:hover': { bgcolor: '#1ebe5d' },
+              '&:disabled': { bgcolor: '#a5d6a7' },
+            }}
+          >
+            {sendingBillWhatsApp ? 'Generating…' : 'WhatsApp'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -5279,7 +5619,7 @@ export default function SalesPage() {
   return (
     <Suspense fallback={
       <DashboardLayout>
-        <Container maxWidth="xl" sx={{ py: 4 }}>
+        <Container maxWidth={false} sx={{ py: 4 }}>
           <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
             <CircularProgress />
           </Box>

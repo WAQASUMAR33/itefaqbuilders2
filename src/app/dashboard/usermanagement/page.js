@@ -1,8 +1,59 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Check, X, Mail, Lock, User, Shield, Clock } from 'lucide-react';
 import DashboardLayout from '../components/dashboard-layout';
+import {
+  Box,
+  Container,
+  Typography,
+  Button,
+  Card,
+  CardContent,
+  Grid,
+  IconButton,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Avatar,
+  Chip,
+  Snackbar,
+  Alert,
+  InputAdornment,
+  CircularProgress,
+  Stack,
+  Tooltip,
+  FormControlLabel,
+  Switch,
+} from '@mui/material';
+import {
+  Add as AddIcon,
+  Edit as EditIcon,
+  Delete as DeleteIcon,
+  Person as PersonIcon,
+  Email as EmailIcon,
+  Lock as LockIcon,
+  Shield as ShieldIcon,
+  CheckCircle as CheckCircleIcon,
+  Cancel as CancelIcon,
+  Search as SearchIcon,
+  Close as CloseIcon,
+  Check as CheckIcon,
+  AccessTime as ClockIcon,
+  VerifiedUser as VerifiedIcon,
+  Block as BlockIcon,
+} from '@mui/icons-material';
 
 export default function UserManagementPage() {
   const [users, setUsers] = useState([]);
@@ -16,19 +67,22 @@ export default function UserManagementPage() {
     password: '',
     role: 'SALESMAN',
     status: 'ACTIVE',
-    is_verified: false
+    is_verified: false,
   });
 
-  // Filter states
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [verifiedFilter, setVerifiedFilter] = useState('all');
 
-  // Load users from API
-  useEffect(() => {
-    fetchUsers();
-  }, []);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState(null);
+
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const showSnackbar = (message, severity = 'success') =>
+    setSnackbar({ open: true, message, severity });
+
+  useEffect(() => { fetchUsers(); }, []);
 
   const fetchUsers = async () => {
     try {
@@ -38,50 +92,72 @@ export default function UserManagementPage() {
         const data = await response.json();
         setUsers(data);
       } else {
-        console.error('Failed to fetch users');
         setUsers([]);
       }
-    } catch (error) {
-      console.error('Error fetching users:', error);
+    } catch {
       setUsers([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAddUser = async (e) => {
-    e.preventDefault();
-    
+  const resetForm = () => {
+    setFormData({ full_name: '', email: '', password: '', role: 'SALESMAN', status: 'ACTIVE', is_verified: false });
+  };
+
+  const handleCloseForm = () => {
+    setShowUserForm(false);
+    setEditingUser(null);
+    resetForm();
+  };
+
+  const handleAddUser = async () => {
     try {
       const response = await fetch('/api/users', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });
-
       if (response.ok) {
         const newUser = await response.json();
         setUsers(prev => [...prev, newUser]);
-        setShowUserForm(false);
-        setFormData({
-          full_name: '',
-          email: '',
-          password: '',
-          role: 'SALESMAN',
-          status: 'ACTIVE',
-          is_verified: false
-        });
-        alert('User created successfully!');
+        handleCloseForm();
+        showSnackbar('User created successfully!');
       } else {
         const error = await response.json();
-        alert(error.error || 'Failed to create user');
+        showSnackbar(error.error || 'Failed to create user', 'error');
       }
-    } catch (error) {
-      console.error('Error creating user:', error);
-      alert('Failed to create user');
+    } catch {
+      showSnackbar('Failed to create user', 'error');
     }
+  };
+
+  const handleUpdateUser = async () => {
+    try {
+      const response = await fetch('/api/users', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editingUser.user_id, ...formData }),
+      });
+      if (response.ok) {
+        const updatedUser = await response.json();
+        setUsers(prev => prev.map(u => u.user_id === editingUser.user_id ? updatedUser : u));
+        handleCloseForm();
+        showSnackbar('User updated successfully!');
+      } else {
+        const error = await response.json();
+        showSnackbar(error.error || 'Failed to update user', 'error');
+      }
+    } catch {
+      showSnackbar('Failed to update user', 'error');
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!formData.full_name.trim()) { showSnackbar('Full name is required', 'error'); return; }
+    if (!formData.email.trim()) { showSnackbar('Email is required', 'error'); return; }
+    if (!editingUser && !formData.password.trim()) { showSnackbar('Password is required', 'error'); return; }
+    if (editingUser) { await handleUpdateUser(); } else { await handleAddUser(); }
   };
 
   const handleEditUser = (user) => {
@@ -92,611 +168,566 @@ export default function UserManagementPage() {
       password: user.password || '',
       role: user.role || 'SALESMAN',
       status: user.status || 'ACTIVE',
-      is_verified: user.is_verified || false
+      is_verified: user.is_verified || false,
     });
     setShowUserForm(true);
   };
 
-  const handleUpdateUser = async (e) => {
-    e.preventDefault();
-    
-    try {
-      const response = await fetch('/api/users', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          id: editingUser.user_id,
-          ...formData
-        }),
-      });
-
-      if (response.ok) {
-        const updatedUser = await response.json();
-        setUsers(prev => prev.map(user => 
-          user.user_id === editingUser.user_id ? updatedUser : user
-        ));
-        setShowUserForm(false);
-        setEditingUser(null);
-        setFormData({
-          full_name: '',
-          email: '',
-          password: '',
-          role: 'SALESMAN',
-          status: 'ACTIVE',
-          is_verified: false
-        });
-        alert('User updated successfully!');
-      } else {
-        const error = await response.json();
-        alert(error.error || 'Failed to update user');
-      }
-    } catch (error) {
-      console.error('Error updating user:', error);
-      alert('Failed to update user');
-    }
+  const handleDeleteConfirm = (user) => {
+    setUserToDelete(user);
+    setDeleteDialogOpen(true);
   };
 
-  const handleDeleteUser = async (userId) => {
-    if (window.confirm('Are you sure you want to delete this user?')) {
-      try {
-        const response = await fetch(`/api/users?id=${userId}`, {
-          method: 'DELETE',
-        });
-
-        if (response.ok) {
-          setUsers(prev => prev.filter(user => user.user_id !== userId));
-          alert('User deleted successfully!');
-        } else {
-          const error = await response.json();
-          alert(error.error || 'Failed to delete user');
-        }
-      } catch (error) {
-        console.error('Error deleting user:', error);
-        alert('Failed to delete user');
+  const handleDeleteUser = async () => {
+    if (!userToDelete) return;
+    try {
+      const response = await fetch(`/api/users?id=${userToDelete.user_id}`, { method: 'DELETE' });
+      if (response.ok) {
+        setUsers(prev => prev.filter(u => u.user_id !== userToDelete.user_id));
+        showSnackbar('User deleted successfully!');
+      } else {
+        const error = await response.json();
+        showSnackbar(error.error || 'Failed to delete user', 'error');
       }
+    } catch {
+      showSnackbar('Failed to delete user', 'error');
+    } finally {
+      setDeleteDialogOpen(false);
+      setUserToDelete(null);
     }
   };
 
   const handleToggleStatus = (userId) => {
-    setUsers(prev => prev.map(user => 
-      user.user_id === userId 
-        ? { ...user, status: user.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' }
-        : user
+    setUsers(prev => prev.map(u =>
+      u.user_id === userId
+        ? { ...u, status: u.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' }
+        : u
     ));
   };
 
-  const handleFormChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    // Validation
-    if (!formData.full_name.trim()) {
-      alert('Full name is required');
-      return;
-    }
-    if (!formData.email.trim()) {
-      alert('Email is required');
-      return;
-    }
-    if (!editingUser && !formData.password.trim()) {
-      alert('Password is required');
-      return;
-    }
-    
-    console.log('Submitting user form:', formData);
-    
-    if (editingUser) {
-      await handleUpdateUser(e);
-    } else {
-      await handleAddUser(e);
-    }
-  };
-
-  const getRoleIcon = (role) => {
+  const getRoleChipProps = (role) => {
     switch (role) {
-      case 'SUPER_ADMIN':
-        return <Shield className="w-4 h-4 text-red-500" />;
-      case 'ADMIN':
-        return <Shield className="w-4 h-4 text-blue-500" />;
-      case 'SALESMAN':
-        return <User className="w-4 h-4 text-green-500" />;
-      default:
-        return <User className="w-4 h-4 text-gray-500" />;
+      case 'SUPER_ADMIN': return { color: 'error', label: 'Super Admin', icon: <ShieldIcon /> };
+      case 'ADMIN':       return { color: 'primary', label: 'Admin', icon: <ShieldIcon /> };
+      case 'SALESMAN':    return { color: 'success', label: 'Salesman', icon: <PersonIcon /> };
+      default:            return { color: 'default', label: role, icon: <PersonIcon /> };
     }
   };
 
-  const getRoleColor = (role) => {
-    switch (role) {
-      case 'SUPER_ADMIN':
-        return 'bg-red-100 text-red-800';
-      case 'ADMIN':
-        return 'bg-blue-100 text-blue-800';
-      case 'SALESMAN':
-        return 'bg-green-100 text-green-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const getStatusColor = (status) => {
-    return status === 'ACTIVE' 
-      ? 'bg-green-100 text-green-800' 
-      : 'bg-red-100 text-red-800';
-  };
-
-  // Filter users based on search and filter criteria
   const filteredUsers = users
     .filter(user => {
-      const matchesSearch = user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           user.email.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch =
+        user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        user.email.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesRole = roleFilter === 'all' || user.role === roleFilter;
       const matchesStatus = statusFilter === 'all' || user.status === statusFilter;
-      const matchesVerified = verifiedFilter === 'all' || 
-                             (verifiedFilter === 'verified' && user.is_verified) ||
-                             (verifiedFilter === 'not-verified' && !user.is_verified);
-      
+      const matchesVerified =
+        verifiedFilter === 'all' ||
+        (verifiedFilter === 'verified' && user.is_verified) ||
+        (verifiedFilter === 'not-verified' && !user.is_verified);
       return matchesSearch && matchesRole && matchesStatus && matchesVerified;
     })
-    .map((user, index) => ({
-      ...user,
-      sequentialId: index + 1
-    }));
+    .map((user, idx) => ({ ...user, sequentialId: idx + 1 }));
 
-  // Clear all filters
-  const clearFilters = () => {
-    setSearchTerm('');
-    setRoleFilter('all');
-    setStatusFilter('all');
-    setVerifiedFilter('all');
-  };
+  const statCards = [
+    {
+      label: 'Total Users',
+      value: users.length,
+      icon: <PersonIcon />,
+      gradient: 'linear-gradient(45deg, #2196F3 30%, #21CBF3 90%)',
+    },
+    {
+      label: 'Active Users',
+      value: users.filter(u => u.status === 'ACTIVE').length,
+      icon: <CheckCircleIcon />,
+      gradient: 'linear-gradient(45deg, #4CAF50 30%, #8BC34A 90%)',
+    },
+    {
+      label: 'Verified Users',
+      value: users.filter(u => u.is_verified).length,
+      icon: <VerifiedIcon />,
+      gradient: 'linear-gradient(45deg, #9C27B0 30%, #E91E63 90%)',
+    },
+    {
+      label: 'Online Today',
+      value: users.filter(u => u.last_logged_in &&
+        new Date(u.last_logged_in).toDateString() === new Date().toDateString()).length,
+      icon: <ClockIcon />,
+      gradient: 'linear-gradient(45deg, #FF9800 30%, #F44336 90%)',
+    },
+  ];
 
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="min-h-screen flex items-center justify-center bg-white">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
-        </div>
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+          <CircularProgress size={56} />
+        </Box>
       </DashboardLayout>
     );
   }
 
   return (
     <DashboardLayout>
-      <div className="space-y-6 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">User Management</h2>
-          <p className="text-gray-600 mt-1">Manage system users and their permissions</p>
-        </div>
-        <button
-          onClick={() => setShowUserForm(true)}
-          className="group bg-gradient-to-r from-blue-500 to-purple-500 text-white px-6 py-3 rounded-lg hover:from-blue-600 hover:to-purple-600 transition-all duration-200 font-medium shadow-md hover:shadow-lg transform hover:scale-105"
-        >
-          <span className="flex items-center">
-            <Plus className="w-5 h-5 mr-2 group-hover:rotate-90 transition-transform duration-200" />
-            Add New User
-          </span>
-        </button>
-      </div>
+      <Container maxWidth={false} sx={{ py: 4 }}>
+        <Stack spacing={4}>
 
-      {/* Filters */}
-      <div className="bg-white rounded-2xl shadow-lg border border-gray-100/50 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">Filters</h3>
-          <button
-            onClick={clearFilters}
-            className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+          {/* ── Header ── */}
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Box>
+              <Typography variant="h4" component="h1" sx={{ fontWeight: 'bold', color: 'text.primary' }}>
+                User Management
+              </Typography>
+              <Typography variant="body1" color="text.secondary" sx={{ mt: 0.5 }}>
+                Manage system users and their permissions
+              </Typography>
+            </Box>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setShowUserForm(true)}
+              sx={{
+                background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
+                boxShadow: '0 3px 5px 2px rgba(33,150,243,.3)',
+                '&:hover': {
+                  background: 'linear-gradient(45deg, #1976D2 30%, #7B1FA2 90%)',
+                  transform: 'scale(1.03)',
+                },
+                transition: 'all 0.2s ease-in-out',
+              }}
+            >
+              Add New User
+            </Button>
+          </Box>
+
+          {/* ── Stats Cards ── */}
+          <Grid container spacing={3}>
+            {statCards.map((stat) => (
+              <Grid item xs={12} sm={6} md={3} key={stat.label}>
+                <Card sx={{ background: stat.gradient, color: 'white' }}>
+                  <CardContent>
+                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                      <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', mr: 2 }}>
+                        {stat.icon}
+                      </Avatar>
+                      <Box>
+                        <Typography variant="body2" sx={{ opacity: 0.85 }}>{stat.label}</Typography>
+                        <Typography variant="h5" sx={{ fontWeight: 'bold' }}>{stat.value}</Typography>
+                      </Box>
+                    </Box>
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+
+          {/* ── Filters ── */}
+          <Card>
+            <CardContent sx={{ p: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                <Typography variant="h6" sx={{ fontWeight: 600 }}>Filters</Typography>
+                <Button size="small" onClick={() => {
+                  setSearchTerm(''); setRoleFilter('all');
+                  setStatusFilter('all'); setVerifiedFilter('all');
+                }}>
+                  Clear All
+                </Button>
+              </Box>
+              <Grid container spacing={2}>
+                <Grid item xs={12} sm={6} md={3}>
+                  <TextField
+                    fullWidth size="small" label="Search"
+                    placeholder="Search by name or email…"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <SearchIcon fontSize="small" />
+                        </InputAdornment>
+                      ),
+                    }}
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Role</InputLabel>
+                    <Select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} label="Role">
+                      <MenuItem value="all">All Roles</MenuItem>
+                      <MenuItem value="SUPER_ADMIN">Super Admin</MenuItem>
+                      <MenuItem value="ADMIN">Admin</MenuItem>
+                      <MenuItem value="SALESMAN">Salesman</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Status</InputLabel>
+                    <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} label="Status">
+                      <MenuItem value="all">All Status</MenuItem>
+                      <MenuItem value="ACTIVE">Active</MenuItem>
+                      <MenuItem value="INACTIVE">Inactive</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Verification</InputLabel>
+                    <Select value={verifiedFilter} onChange={(e) => setVerifiedFilter(e.target.value)} label="Verification">
+                      <MenuItem value="all">All Users</MenuItem>
+                      <MenuItem value="verified">Verified</MenuItem>
+                      <MenuItem value="not-verified">Not Verified</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+
+          {/* ── Table ── */}
+          <Card>
+            <Box sx={{
+              px: 3, py: 2,
+              borderBottom: 1, borderColor: 'divider',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            }}>
+              <Typography variant="h6" sx={{ fontWeight: 600 }}>Users List</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Showing {filteredUsers.length} of {users.length} users
+              </Typography>
+            </Box>
+            <TableContainer>
+              <Table sx={{ minWidth: 900 }}>
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100' }}>User</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100' }}>Email</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100' }}>Role</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100' }}>Status</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100' }}>Verified</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100' }}>Last Login</TableCell>
+                    <TableCell align="center" sx={{ fontWeight: 'bold', bgcolor: 'grey.100' }}>Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {filteredUsers.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} align="center">
+                        <Box sx={{ py: 8, textAlign: 'center' }}>
+                          <PersonIcon sx={{ fontSize: 64, color: 'text.disabled', mb: 2 }} />
+                          <Typography variant="h6" color="text.secondary" gutterBottom>
+                            No users found
+                          </Typography>
+                          <Typography variant="body2" color="text.disabled">
+                            Add your first user to get started.
+                          </Typography>
+                        </Box>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredUsers.map((user) => {
+                      const roleProps = getRoleChipProps(user.role);
+                      return (
+                        <TableRow key={user.user_id} sx={{ '&:hover': { bgcolor: 'grey.50' } }}>
+                          <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                              <Avatar sx={{
+                                background: 'linear-gradient(135deg, #2196F3, #3F51B5)',
+                                width: 38, height: 38, fontSize: 16, fontWeight: 'bold',
+                              }}>
+                                {user.full_name.charAt(0).toUpperCase()}
+                              </Avatar>
+                              <Box>
+                                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                  {user.full_name}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  #{user.sequentialId}
+                                </Typography>
+                              </Box>
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2">{user.email}</Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              size="small"
+                              icon={roleProps.icon}
+                              label={roleProps.label}
+                              color={roleProps.color}
+                              variant="outlined"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              size="small"
+                              label={user.status}
+                              color={user.status === 'ACTIVE' ? 'success' : 'error'}
+                              variant="filled"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            {user.is_verified ? (
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'success.main' }}>
+                                <CheckCircleIcon fontSize="small" />
+                                <Typography variant="body2">Verified</Typography>
+                              </Box>
+                            ) : (
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'error.main' }}>
+                                <CancelIcon fontSize="small" />
+                                <Typography variant="body2">Not Verified</Typography>
+                              </Box>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" color="text.secondary">
+                              {user.last_logged_in
+                                ? new Date(user.last_logged_in).toLocaleString()
+                                : 'Never'}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="center">
+                            <Tooltip title="Edit">
+                              <IconButton size="small" color="primary" onClick={() => handleEditUser(user)}>
+                                <EditIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title={user.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}>
+                              <IconButton
+                                size="small"
+                                color={user.status === 'ACTIVE' ? 'warning' : 'success'}
+                                onClick={() => handleToggleStatus(user.user_id)}
+                              >
+                                {user.status === 'ACTIVE'
+                                  ? <BlockIcon fontSize="small" />
+                                  : <CheckIcon fontSize="small" />}
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Delete">
+                              <IconButton size="small" color="error" onClick={() => handleDeleteConfirm(user)}>
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Card>
+
+        </Stack>
+      </Container>
+
+      {/* ── Add / Edit User Dialog ── */}
+      <Dialog
+        open={showUserForm}
+        onClose={handleCloseForm}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{
+          background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
+          color: 'white',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)' }}>
+              <PersonIcon />
+            </Avatar>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 'bold', lineHeight: 1.2 }}>
+                {editingUser ? 'Edit User' : 'Add New User'}
+              </Typography>
+              <Typography variant="caption" sx={{ opacity: 0.9 }}>
+                {editingUser ? 'Update user information' : 'Create a new system user'}
+              </Typography>
+            </Box>
+          </Box>
+          <IconButton onClick={handleCloseForm} sx={{ color: 'white' }}>
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+
+        <DialogContent sx={{ pt: 3 }}>
+          <Grid container spacing={2.5} sx={{ mt: 0.5 }}>
+
+            {/* Full Name */}
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Full Name"
+                name="full_name"
+                value={formData.full_name}
+                onChange={(e) => setFormData(prev => ({ ...prev, full_name: e.target.value }))}
+                required
+                placeholder="Enter full name"
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <PersonIcon color="action" />
+                    </InputAdornment>
+                  ),
+                }}
+              />
+            </Grid>
+
+            {/* Email */}
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Email Address"
+                name="email"
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                required
+                placeholder="Enter email address"
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <EmailIcon color="action" />
+                    </InputAdornment>
+                  ),
+                }}
+              />
+            </Grid>
+
+            {/* Password */}
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label={editingUser ? 'Password (leave blank to keep)' : 'Password'}
+                name="password"
+                type="password"
+                value={formData.password}
+                onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+                required={!editingUser}
+                placeholder="Enter password"
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <LockIcon color="action" />
+                    </InputAdornment>
+                  ),
+                }}
+              />
+            </Grid>
+
+            {/* Role */}
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth required>
+                <InputLabel>User Role</InputLabel>
+                <Select
+                  name="role"
+                  value={formData.role}
+                  onChange={(e) => setFormData(prev => ({ ...prev, role: e.target.value }))}
+                  label="User Role"
+                >
+                  <MenuItem value="SALESMAN">Salesman</MenuItem>
+                  <MenuItem value="ADMIN">Admin</MenuItem>
+                  <MenuItem value="SUPER_ADMIN">Super Admin</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+
+            {/* Status */}
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth>
+                <InputLabel>Account Status</InputLabel>
+                <Select
+                  name="status"
+                  value={formData.status}
+                  onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
+                  label="Account Status"
+                >
+                  <MenuItem value="ACTIVE">Active</MenuItem>
+                  <MenuItem value="INACTIVE">Inactive</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+
+            {/* Email Verified */}
+            <Grid item xs={12} sm={6} sx={{ display: 'flex', alignItems: 'center' }}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={formData.is_verified}
+                    onChange={(e) => setFormData(prev => ({ ...prev, is_verified: e.target.checked }))}
+                    color="success"
+                  />
+                }
+                label={
+                  <Box>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>Email Verified</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {formData.is_verified ? 'User email is verified' : 'User email not yet verified'}
+                    </Typography>
+                  </Box>
+                }
+              />
+            </Grid>
+
+          </Grid>
+        </DialogContent>
+
+        <DialogActions sx={{ p: 3, borderTop: 1, borderColor: 'divider' }}>
+          <Button onClick={handleCloseForm} variant="outlined">Cancel</Button>
+          <Button
+            onClick={handleSubmit}
+            variant="contained"
+            startIcon={<CheckIcon />}
+            sx={{
+              background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
+              '&:hover': { background: 'linear-gradient(45deg, #1976D2 30%, #7B1FA2 90%)' },
+            }}
           >
-            Clear All Filters
-          </button>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Search */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Search</label>
-            <input
-              type="text"
-              placeholder="Search users..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-black"
-            />
-          </div>
+            {editingUser ? 'Update User' : 'Create User'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
-          {/* Role Filter */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Role</label>
-            <select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-black"
-            >
-              <option value="all">All Roles</option>
-              <option value="SUPER_ADMIN">Super Admin</option>
-              <option value="ADMIN">Admin</option>
-              <option value="SALESMAN">Salesman</option>
-            </select>
-          </div>
+      {/* ── Delete Confirmation Dialog ── */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle>Delete User</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete{' '}
+            <strong>{userToDelete?.full_name}</strong>? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setDeleteDialogOpen(false)} variant="outlined">Cancel</Button>
+          <Button onClick={handleDeleteUser} color="error" variant="contained">Delete</Button>
+        </DialogActions>
+      </Dialog>
 
-          {/* Status Filter */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-black"
-            >
-              <option value="all">All Status</option>
-              <option value="ACTIVE">Active</option>
-              <option value="INACTIVE">Inactive</option>
-            </select>
-          </div>
+      {/* ── Snackbar ── */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={4000}
+        onClose={() => setSnackbar(s => ({ ...s, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert
+          severity={snackbar.severity}
+          onClose={() => setSnackbar(s => ({ ...s, open: false }))}
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
 
-          {/* Verification Filter */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Verification</label>
-            <select
-              value={verifiedFilter}
-              onChange={(e) => setVerifiedFilter(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-black"
-            >
-              <option value="all">All Users</option>
-              <option value="verified">Verified</option>
-              <option value="not-verified">Not Verified</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100/50 p-6">
-          <div className="flex items-center">
-            <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center mr-4">
-              <User className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Total Users</p>
-              <p className="text-2xl font-bold text-gray-900">{users.length}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100/50 p-6">
-          <div className="flex items-center">
-            <div className="w-12 h-12 bg-gradient-to-r from-green-500 to-emerald-500 rounded-xl flex items-center justify-center mr-4">
-              <Check className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Active Users</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {users.filter(user => user.status === 'ACTIVE').length}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100/50 p-6">
-          <div className="flex items-center">
-            <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl flex items-center justify-center mr-4">
-              <Mail className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Verified Users</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {users.filter(user => user.is_verified).length}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100/50 p-6">
-          <div className="flex items-center">
-            <div className="w-12 h-12 bg-gradient-to-r from-orange-500 to-red-500 rounded-xl flex items-center justify-center mr-4">
-              <Clock className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Online Today</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {users.filter(user => user.last_logged_in && 
-                  new Date(user.last_logged_in).toDateString() === new Date().toDateString()).length}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Users Table */}
-      <div className="bg-white rounded-2xl shadow-lg border border-gray-100/50 flex flex-col h-[600px]">
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
-          <h3 className="text-lg font-semibold text-gray-900">Users List</h3>
-          <span className="text-sm text-gray-500">
-            Showing {filteredUsers.length} of {users.length} users
-          </span>
-        </div>
-        <div className="flex-1 overflow-hidden">
-          <div className="h-full overflow-y-auto">
-            <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Verified</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Login</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredUsers.map((user) => (
-                <tr key={user.user_id} className="hover:bg-gray-50 transition-colors duration-200">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center mr-3">
-                        <span className="text-white font-bold text-sm">{user.full_name.charAt(0)}</span>
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">{user.full_name}</div>
-                        <div className="text-sm text-gray-500">ID: #{user.sequentialId}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{user.email}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getRoleColor(user.role)}`}>
-                      {getRoleIcon(user.role)}
-                      <span className="ml-1">{user.role}</span>
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(user.status)}`}>
-                      {user.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {user.is_verified ? (
-                      <div className="flex items-center text-green-600">
-                        <Check className="w-4 h-4 mr-1" />
-                        <span className="text-sm">Verified</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center text-red-600">
-                        <X className="w-4 h-4 mr-1" />
-                        <span className="text-sm">Not Verified</span>
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {user.last_logged_in ? new Date(user.last_logged_in).toLocaleString() : 'Never'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={() => handleEditUser(user)}
-                        className="text-blue-600 hover:text-blue-900 p-1 rounded hover:bg-blue-50 transition-colors duration-200"
-                        title="Edit User"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleToggleStatus(user.user_id)}
-                        className={`p-1 rounded transition-colors duration-200 ${
-                          user.status === 'ACTIVE' 
-                            ? 'text-red-600 hover:text-red-900 hover:bg-red-50' 
-                            : 'text-green-600 hover:text-green-900 hover:bg-green-50'
-                        }`}
-                        title={user.status === 'ACTIVE' ? 'Deactivate User' : 'Activate User'}
-                      >
-                        {user.status === 'ACTIVE' ? <X className="w-4 h-4" /> : <Check className="w-4 h-4" />}
-                      </button>
-                      <button
-                        onClick={() => handleDeleteUser(user.user_id)}
-                        className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors duration-200"
-                        title="Delete User"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      {/* User Modal */}
-      {showUserForm && (
-        <div className="fixed inset-0 z-[9999] overflow-y-auto">
-          <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
-            {/* Background Overlay */}
-            <div 
-              className="fixed inset-0 bg-gradient-to-br from-gray-900/80 via-blue-900/60 to-purple-900/80 backdrop-blur-md transition-all duration-500 ease-out animate-fade-in" 
-              onClick={() => setShowUserForm(false)}
-            ></div>
-            
-            {/* Modal Container */}
-            <div className="relative inline-block w-full max-w-4xl p-0 my-8 overflow-hidden text-left align-middle transition-all duration-500 ease-out transform bg-white/95 backdrop-blur-xl shadow-2xl rounded-3xl border border-white/20 animate-slide-in-up">
-              
-              {/* Header */}
-              <div className="relative bg-gradient-to-r from-blue-600 to-purple-600 p-6 text-white">
-                <div className="absolute inset-0 bg-black/10"></div>
-                <div className="relative flex items-center justify-between">
-                  <div className="flex items-center">
-                    <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center mr-4">
-                      <User className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h3 className="text-xl font-bold">
-                        {editingUser ? 'Edit User' : 'Add New User'}
-                      </h3>
-                      <p className="text-blue-100 text-sm">
-                        {editingUser ? 'Update user information' : 'Create a new system user'}
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setShowUserForm(false)}
-                    className="w-10 h-10 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-full flex items-center justify-center transition-all duration-200 hover:scale-110"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Form Content */}
-              <div className="p-6">
-                <form onSubmit={handleSubmit} className="space-y-6">
-                  
-                  {/* First Row - Full Name and Email */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="group">
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        <User className="w-4 h-4 inline mr-2" />
-                        Full Name <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        name="full_name"
-                        value={formData.full_name}
-                        onChange={handleFormChange}
-                        required
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200 bg-white hover:bg-gray-50 text-black"
-                        placeholder="Enter full name"
-                      />
-                    </div>
-
-                    <div className="group">
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        <Mail className="w-4 h-4 inline mr-2" />
-                        Email Address <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="email"
-                        name="email"
-                        value={formData.email}
-                        onChange={handleFormChange}
-                        required
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200 bg-white hover:bg-gray-50 text-black"
-                        placeholder="Enter email address"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Second Row - Password and Role */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="group">
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        <Lock className="w-4 h-4 inline mr-2" />
-                        Password <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="password"
-                        name="password"
-                        value={formData.password}
-                        onChange={handleFormChange}
-                        required
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200 bg-white hover:bg-gray-50 text-black"
-                        placeholder="Enter password"
-                      />
-                    </div>
-
-                    <div className="group">
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        <Shield className="w-4 h-4 inline mr-2" />
-                        User Role <span className="text-red-500">*</span>
-                      </label>
-                      <select
-                        name="role"
-                        value={formData.role}
-                        onChange={handleFormChange}
-                        required
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200 bg-white hover:bg-gray-50 text-black"
-                      >
-                        <option value="SALESMAN">Salesman</option>
-                        <option value="ADMIN">Admin</option>
-                        <option value="SUPER_ADMIN">Super Admin</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Third Row - Status and Verification */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="group">
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        Account Status
-                      </label>
-                      <select
-                        name="status"
-                        value={formData.status}
-                        onChange={handleFormChange}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200 bg-white hover:bg-gray-50 text-black"
-                      >
-                        <option value="ACTIVE">Active</option>
-                        <option value="INACTIVE">Inactive</option>
-                      </select>
-                    </div>
-
-                    <div className="group">
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        Email Verification
-                      </label>
-                      <div className="flex items-center space-x-3 mt-3">
-                        <label className="flex items-center">
-                          <input
-                            type="checkbox"
-                            name="is_verified"
-                            checked={formData.is_verified}
-                            onChange={handleFormChange}
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                          />
-                          <span className="ml-2 text-sm text-gray-700">Email Verified</span>
-                        </label>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="flex items-center justify-end space-x-4 pt-4 border-t border-gray-200">
-                    <button
-                      type="button"
-                      onClick={() => setShowUserForm(false)}
-                      className="px-6 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-all duration-200"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="group px-8 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg hover:from-blue-600 hover:to-purple-600 transition-all duration-200 shadow-md hover:shadow-lg"
-                    >
-                      <span className="flex items-center">
-                        {editingUser ? 'Update User' : 'Create User'}
-                        <Check className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform duration-200" />
-                      </span>
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-      </div>
     </DashboardLayout>
   );
 }

@@ -1,48 +1,86 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Check, X, Truck, Search, Calendar, DollarSign, Receipt } from 'lucide-react';
 import DashboardLayout from '../components/dashboard-layout';
+import {
+  Box,
+  Container,
+  Typography,
+  Button,
+  Card,
+  CardContent,
+  Grid,
+  IconButton,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Avatar,
+  Snackbar,
+  Alert,
+  InputAdornment,
+  CircularProgress,
+  Stack,
+  Tooltip,
+} from '@mui/material';
+import {
+  Add as AddIcon,
+  Edit as EditIcon,
+  Delete as DeleteIcon,
+  LocalShipping as TruckIcon,
+  Search as SearchIcon,
+  AttachMoney as MoneyIcon,
+  Receipt as ReceiptIcon,
+  TrendingUp as NetIcon,
+  Close as CloseIcon,
+  Check as CheckIcon,
+} from '@mui/icons-material';
 
 export default function CargoPage() {
   const [cargo, setCargo] = useState([]);
   const [loading, setLoading] = useState(true);
-
   const [showCargoForm, setShowCargoForm] = useState(false);
   const [editingCargo, setEditingCargo] = useState(null);
   const [formData, setFormData] = useState({
     vehicle_no: '',
     total_cargo_fare: 0,
-    exp1: 0,
-    exp2: 0,
-    exp3: 0,
-    exp4: 0,
-    exp5: 0,
-    exp6: 0,
-    others: 0
+    exp1: 0, exp2: 0, exp3: 0,
+    exp4: 0, exp5: 0, exp6: 0,
+    others: 0,
   });
 
-  // Filter states
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('created_at');
   const [sortOrder, setSortOrder] = useState('desc');
 
-  // Load data from API
-  useEffect(() => {
-    fetchData();
-  }, []);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [cargoToDelete, setCargoToDelete] = useState(null);
+
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const showSnackbar = (message, severity = 'success') =>
+    setSnackbar({ open: true, message, severity });
+
+  useEffect(() => { fetchData(); }, []);
 
   const fetchData = async () => {
     try {
       setLoading(true);
       const response = await fetch('/api/cargo');
-
       if (response.ok) {
         const data = await response.json();
         const cargoData = data.cargo || data;
         setCargo(Array.isArray(cargoData) ? cargoData : []);
-      } else {
-        console.error('Failed to fetch cargo data');
       }
     } catch (error) {
       console.error('Error fetching cargo data:', error);
@@ -51,31 +89,59 @@ export default function CargoPage() {
     }
   };
 
-  const handleAddCargo = async (e) => {
-    e.preventDefault();
-
+  const handleAddCargo = async () => {
     try {
       const response = await fetch('/api/cargo', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });
-
       if (response.ok) {
         const newCargo = await response.json();
         setCargo(prev => [...prev, newCargo]);
-        setShowCargoForm(false);
-        resetForm();
-        alert('Cargo added successfully!');
+        handleCloseForm();
+        showSnackbar('Cargo added successfully!');
       } else {
         const error = await response.json();
-        alert(error.error || 'Failed to create cargo');
+        showSnackbar(error.error || 'Failed to create cargo', 'error');
       }
-    } catch (error) {
-      console.error('Error creating cargo:', error);
-      alert('Failed to create cargo');
+    } catch {
+      showSnackbar('Failed to create cargo', 'error');
+    }
+  };
+
+  const handleUpdateCargo = async () => {
+    try {
+      const response = await fetch('/api/cargo', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editingCargo.cargo_id, ...formData }),
+      });
+      if (response.ok) {
+        const updatedCargo = await response.json();
+        setCargo(prev =>
+          prev.map(item => item.cargo_id === editingCargo.cargo_id ? updatedCargo : item)
+        );
+        handleCloseForm();
+        showSnackbar('Cargo updated successfully!');
+      } else {
+        const error = await response.json();
+        showSnackbar(error.error || 'Failed to update cargo', 'error');
+      }
+    } catch {
+      showSnackbar('Failed to update cargo', 'error');
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!formData.vehicle_no.trim()) {
+      showSnackbar('Vehicle number is required', 'error');
+      return;
+    }
+    if (editingCargo) {
+      await handleUpdateCargo();
+    } else {
+      await handleAddCargo();
     }
   };
 
@@ -84,586 +150,513 @@ export default function CargoPage() {
     setFormData({
       vehicle_no: cargoItem.vehicle_no || '',
       total_cargo_fare: cargoItem.total_cargo_fare || 0,
-      exp1: cargoItem.exp1 || 0,
-      exp2: cargoItem.exp2 || 0,
-      exp3: cargoItem.exp3 || 0,
-      exp4: cargoItem.exp4 || 0,
-      exp5: cargoItem.exp5 || 0,
-      exp6: cargoItem.exp6 || 0,
-      others: cargoItem.others || 0
+      exp1: cargoItem.exp1 || 0, exp2: cargoItem.exp2 || 0,
+      exp3: cargoItem.exp3 || 0, exp4: cargoItem.exp4 || 0,
+      exp5: cargoItem.exp5 || 0, exp6: cargoItem.exp6 || 0,
+      others: cargoItem.others || 0,
     });
     setShowCargoForm(true);
   };
 
-  const handleUpdateCargo = async (e) => {
-    e.preventDefault();
-
-    try {
-      const response = await fetch('/api/cargo', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          id: editingCargo.cargo_id,
-          ...formData
-        }),
-      });
-
-      if (response.ok) {
-        const updatedCargo = await response.json();
-        setCargo(prev => prev.map(item =>
-          item.cargo_id === editingCargo.cargo_id ? updatedCargo : item
-        ));
-        setShowCargoForm(false);
-        setEditingCargo(null);
-        resetForm();
-        alert('Cargo updated successfully!');
-      } else {
-        const error = await response.json();
-        alert(error.error || 'Failed to update cargo');
-      }
-    } catch (error) {
-      console.error('Error updating cargo:', error);
-      alert('Failed to update cargo');
-    }
+  const handleDeleteConfirm = (cargoItem) => {
+    setCargoToDelete(cargoItem);
+    setDeleteDialogOpen(true);
   };
 
-  const handleDeleteCargo = async (cargoId) => {
-    if (window.confirm('Are you sure you want to delete this cargo record?')) {
-      try {
-        const response = await fetch(`/api/cargo?id=${cargoId}`, {
-          method: 'DELETE',
-        });
-
-        if (response.ok) {
-          setCargo(prev => prev.filter(item => item.cargo_id !== cargoId));
-          alert('Cargo deleted successfully!');
-        } else {
-          const error = await response.json();
-          alert(error.error || 'Failed to delete cargo');
-        }
-      } catch (error) {
-        console.error('Error deleting cargo:', error);
-        alert('Failed to delete cargo');
+  const handleDeleteCargo = async () => {
+    if (!cargoToDelete) return;
+    try {
+      const response = await fetch(`/api/cargo?id=${cargoToDelete.cargo_id}`, { method: 'DELETE' });
+      if (response.ok) {
+        setCargo(prev => prev.filter(item => item.cargo_id !== cargoToDelete.cargo_id));
+        showSnackbar('Cargo deleted successfully!');
+      } else {
+        const error = await response.json();
+        showSnackbar(error.error || 'Failed to delete cargo', 'error');
       }
+    } catch {
+      showSnackbar('Failed to delete cargo', 'error');
+    } finally {
+      setDeleteDialogOpen(false);
+      setCargoToDelete(null);
     }
   };
 
   const handleFormChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: parseFloat(value) || 0
-    }));
+    setFormData(prev => ({ ...prev, [name]: parseFloat(value) || 0 }));
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    // Validation
-    if (!formData.vehicle_no.trim()) {
-      alert('Vehicle number is required');
-      return;
-    }
-
-    if (editingCargo) {
-      await handleUpdateCargo(e);
-    } else {
-      await handleAddCargo(e);
-    }
-  };
-
-  const resetForm = () => {
+  const handleCloseForm = () => {
+    setShowCargoForm(false);
+    setEditingCargo(null);
     setFormData({
-      vehicle_no: '',
-      total_cargo_fare: 0,
-      exp1: 0,
-      exp2: 0,
-      exp3: 0,
-      exp4: 0,
-      exp5: 0,
-      exp6: 0,
-      others: 0
+      vehicle_no: '', total_cargo_fare: 0,
+      exp1: 0, exp2: 0, exp3: 0, exp4: 0, exp5: 0, exp6: 0, others: 0,
     });
   };
 
-  // Filter and sort cargo
+  const calculateTotalExpenses = (item) =>
+    ['exp1', 'exp2', 'exp3', 'exp4', 'exp5', 'exp6', 'others']
+      .reduce((sum, key) => sum + (parseFloat(item[key]) || 0), 0);
+
+  const calculateNetAmount = (item) =>
+    (parseFloat(item.total_cargo_fare) || 0) - calculateTotalExpenses(item);
+
   const filteredAndSortedCargo = cargo
-    .filter(item => {
-      const matchesSearch = (item.vehicle_no || '').toLowerCase().includes(searchTerm.toLowerCase());
-      return matchesSearch;
-    })
+    .filter(item =>
+      (item.vehicle_no || '').toLowerCase().includes(searchTerm.toLowerCase())
+    )
     .sort((a, b) => {
-      let aValue = a[sortBy];
-      let bValue = b[sortBy];
-
-      if (sortBy === 'created_at') {
-        aValue = new Date(aValue);
-        bValue = new Date(bValue);
-      }
-
-      if (sortOrder === 'asc') {
-        return aValue > bValue ? 1 : -1;
-      } else {
-        return aValue < bValue ? 1 : -1;
-      }
+      let aVal = sortBy === 'created_at' ? new Date(a[sortBy]) : a[sortBy];
+      let bVal = sortBy === 'created_at' ? new Date(b[sortBy]) : b[sortBy];
+      return sortOrder === 'asc' ? (aVal > bVal ? 1 : -1) : (aVal < bVal ? 1 : -1);
     })
-    .map((item, index) => ({
-      ...item,
-      sequentialId: index + 1
-    }));
+    .map((item, idx) => ({ ...item, sequentialId: idx + 1 }));
 
-  // Calculate total expenses
-  const calculateTotalExpenses = (item) => {
-    return (parseFloat(item.exp1) || 0) + (parseFloat(item.exp2) || 0) + (parseFloat(item.exp3) || 0) +
-      (parseFloat(item.exp4) || 0) + (parseFloat(item.exp5) || 0) + (parseFloat(item.exp6) || 0) + (parseFloat(item.others) || 0);
-  };
+  const statCards = [
+    {
+      label: 'Total Records',
+      value: cargo.length,
+      icon: <TruckIcon />,
+      gradient: 'linear-gradient(45deg, #2196F3 30%, #21CBF3 90%)',
+    },
+    {
+      label: 'Total Fare',
+      value: cargo.reduce((s, i) => s + (parseFloat(i.total_cargo_fare) || 0), 0).toLocaleString(),
+      icon: <MoneyIcon />,
+      gradient: 'linear-gradient(45deg, #4CAF50 30%, #8BC34A 90%)',
+    },
+    {
+      label: 'Total Expenses',
+      value: cargo.reduce((s, i) => s + calculateTotalExpenses(i), 0).toLocaleString(),
+      icon: <ReceiptIcon />,
+      gradient: 'linear-gradient(45deg, #9C27B0 30%, #E91E63 90%)',
+    },
+    {
+      label: 'Net Amount',
+      value: cargo.reduce((s, i) => s + calculateNetAmount(i), 0).toLocaleString(),
+      icon: <NetIcon />,
+      gradient: 'linear-gradient(45deg, #FF9800 30%, #F44336 90%)',
+    },
+  ];
 
-  // Calculate net amount
-  const calculateNetAmount = (item) => {
-    return (parseFloat(item.total_cargo_fare) || 0) - calculateTotalExpenses(item);
-  };
-
-  // Clear filters
-  const clearFilters = () => {
-    setSearchTerm('');
-    setSortBy('created_at');
-    setSortOrder('desc');
-  };
+  const expenseFields = [
+    { name: 'exp1', label: 'Expense 1' },
+    { name: 'exp2', label: 'Expense 2' },
+    { name: 'exp3', label: 'Expense 3' },
+    { name: 'exp4', label: 'Expense 4' },
+    { name: 'exp5', label: 'Expense 5' },
+    { name: 'exp6', label: 'Expense 6' },
+  ];
 
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="min-h-screen flex items-center justify-center bg-white">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
-        </div>
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+          <CircularProgress size={56} />
+        </Box>
       </DashboardLayout>
     );
   }
 
   return (
     <DashboardLayout>
-      <div className="space-y-6 max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">Cargo Management</h2>
-            <p className="text-gray-600 mt-1">Manage cargo records and expenses</p>
-          </div>
-          <button
-            onClick={() => setShowCargoForm(true)}
-            className="group bg-gradient-to-r from-blue-500 to-purple-500 text-white px-6 py-3 rounded-lg hover:from-blue-600 hover:to-purple-600 transition-all duration-200 font-medium shadow-md hover:shadow-lg transform hover:scale-105"
-          >
-            <span className="flex items-center">
-              <Plus className="w-5 h-5 mr-2 group-hover:rotate-90 transition-transform duration-200" />
-              Add New Cargo
-            </span>
-          </button>
-        </div>
+      <Container maxWidth={false} sx={{ py: 4 }}>
+        <Stack spacing={4}>
 
-        {/* Filters */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100/50 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Filters & Search</h3>
-            <button
-              onClick={clearFilters}
-              className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+          {/* ── Header ── */}
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Box>
+              <Typography variant="h4" component="h1" sx={{ fontWeight: 'bold', color: 'text.primary' }}>
+                Cargo Management
+              </Typography>
+              <Typography variant="body1" color="text.secondary" sx={{ mt: 0.5 }}>
+                Manage cargo records and expenses
+              </Typography>
+            </Box>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setShowCargoForm(true)}
+              sx={{
+                background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
+                boxShadow: '0 3px 5px 2px rgba(33,150,243,.3)',
+                '&:hover': {
+                  background: 'linear-gradient(45deg, #1976D2 30%, #7B1FA2 90%)',
+                  transform: 'scale(1.03)',
+                },
+                transition: 'all 0.2s ease-in-out',
+              }}
             >
-              Clear All Filters
-            </button>
-          </div>
+              Add New Cargo
+            </Button>
+          </Box>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            {/* Search */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Search</label>
-              <input
-                type="text"
-                placeholder="Search by vehicle number..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-black"
-              />
-            </div>
+          {/* ── Stats Cards ── */}
+          <Grid container spacing={3}>
+            {statCards.map((stat) => (
+              <Grid item xs={12} sm={6} md={3} key={stat.label}>
+                <Card sx={{ background: stat.gradient, color: 'white' }}>
+                  <CardContent>
+                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                      <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', mr: 2 }}>
+                        {stat.icon}
+                      </Avatar>
+                      <Box>
+                        <Typography variant="body2" sx={{ opacity: 0.85 }}>
+                          {stat.label}
+                        </Typography>
+                        <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
+                          {stat.value}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
 
-            {/* Sort By */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Sort By</label>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-black"
-              >
-                <option value="created_at">Date Created</option>
-                <option value="vehicle_no">Vehicle Number</option>
-                <option value="total_cargo_fare">Total Fare</option>
-              </select>
-            </div>
-
-            {/* Sort Order */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Order</label>
-              <select
-                value={sortOrder}
-                onChange={(e) => setSortOrder(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-black"
-              >
-                <option value="desc">Descending</option>
-                <option value="asc">Ascending</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-100/50 p-6">
-            <div className="flex items-center">
-              <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center mr-4">
-                <Truck className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-600">Total Records</p>
-                <p className="text-2xl font-bold text-gray-900">{cargo.length}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-100/50 p-6">
-            <div className="flex items-center">
-              <div className="w-12 h-12 bg-gradient-to-r from-green-500 to-emerald-500 rounded-xl flex items-center justify-center mr-4">
-                <DollarSign className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-600">Total Fare</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {cargo.reduce((sum, item) => sum + (parseFloat(item.total_cargo_fare) || 0), 0).toFixed(2)}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-100/50 p-6">
-            <div className="flex items-center">
-              <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl flex items-center justify-center mr-4">
-                <Receipt className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-600">Total Expenses</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {cargo.reduce((sum, item) => sum + calculateTotalExpenses(item), 0).toFixed(2)}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-100/50 p-6">
-            <div className="flex items-center">
-              <div className="w-12 h-12 bg-gradient-to-r from-orange-500 to-red-500 rounded-xl flex items-center justify-center mr-4">
-                <Calendar className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-600">Net Amount</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {cargo.reduce((sum, item) => sum + calculateNetAmount(item), 0).toFixed(2)}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Cargo Table */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100/50 flex flex-col h-[600px]">
-          <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
-            <h3 className="text-lg font-semibold text-gray-900">Cargo Records</h3>
-            <span className="text-sm text-gray-500">
-              Showing {filteredAndSortedCargo.length} of {cargo.length} records
-            </span>
-          </div>
-          <div className="flex-1 overflow-hidden">
-            <div className="h-full overflow-y-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vehicle</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Fare</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Expenses</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Net Amount</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredAndSortedCargo.map((item) => (
-                    <tr key={item.cargo_id} className="hover:bg-gray-50 transition-colors duration-200">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center mr-3">
-                            <Truck className="w-5 h-5 text-white" />
-                          </div>
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">{item.vehicle_no}</div>
-                            <div className="text-sm text-gray-500">ID: #{item.sequentialId}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm font-medium text-gray-900">
-                          {parseFloat(item.total_cargo_fare).toFixed(2)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm font-medium text-red-600">
-                          {calculateTotalExpenses(item).toFixed(2)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`text-sm font-medium ${calculateNetAmount(item) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {calculateNetAmount(item).toFixed(2)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {item.created_at ? new Date(item.created_at).toLocaleDateString() : '-'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <div className="flex items-center space-x-2">
-                          <button
-                            onClick={() => handleEditCargo(item)}
-                            className="text-blue-600 hover:text-blue-900 p-1 rounded hover:bg-blue-50 transition-colors duration-200"
-                            title="Edit Cargo"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteCargo(item.cargo_id)}
-                            className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors duration-200"
-                            title="Delete Cargo"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        {/* Cargo Modal */}
-        {showCargoForm && (
-          <div className="fixed inset-0 z-[9999] overflow-y-auto">
-            <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
-              {/* Background Overlay */}
-              <div
-                className="fixed inset-0 bg-gradient-to-br from-gray-900/80 via-blue-900/60 to-purple-900/80 backdrop-blur-md transition-all duration-500 ease-out animate-fade-in"
-                onClick={() => setShowCargoForm(false)}
-              ></div>
-
-              {/* Modal Container */}
-              <div className="relative inline-block w-full max-w-4xl p-0 my-8 overflow-hidden text-left align-middle transition-all duration-500 ease-out transform bg-white/95 backdrop-blur-xl shadow-2xl rounded-3xl border border-white/20 animate-slide-in-up">
-
-                {/* Header */}
-                <div className="relative bg-gradient-to-r from-blue-600 to-purple-600 p-6 text-white">
-                  <div className="absolute inset-0 bg-black/10"></div>
-                  <div className="relative flex items-center justify-between">
-                    <div className="flex items-center">
-                      <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center mr-4">
-                        <Truck className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <h3 className="text-xl font-bold">
-                          {editingCargo ? 'Edit Cargo Record' : 'Add New Cargo Record'}
-                        </h3>
-                        <p className="text-blue-100 text-sm">
-                          {editingCargo ? 'Update cargo information' : 'Create a new cargo record'}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setShowCargoForm(false)}
-                      className="w-10 h-10 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-full flex items-center justify-center transition-all duration-200 hover:scale-110"
+          {/* ── Filters ── */}
+          <Card>
+            <CardContent sx={{ p: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                  Filters &amp; Search
+                </Typography>
+                <Button size="small" onClick={() => { setSearchTerm(''); setSortBy('created_at'); setSortOrder('desc'); }}>
+                  Clear All
+                </Button>
+              </Box>
+              <Grid container spacing={2}>
+                <Grid item xs={12} sm={6} md={4}>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    label="Search"
+                    placeholder="Search by vehicle number…"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <SearchIcon fontSize="small" />
+                        </InputAdornment>
+                      ),
+                    }}
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6} md={4}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Sort By</InputLabel>
+                    <Select
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value)}
+                      label="Sort By"
                     >
-                      <X className="w-5 h-5" />
-                    </button>
-                  </div>
-                </div>
+                      <MenuItem value="created_at">Date Created</MenuItem>
+                      <MenuItem value="vehicle_no">Vehicle Number</MenuItem>
+                      <MenuItem value="total_cargo_fare">Total Fare</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12} sm={6} md={4}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Order</InputLabel>
+                    <Select
+                      value={sortOrder}
+                      onChange={(e) => setSortOrder(e.target.value)}
+                      label="Order"
+                    >
+                      <MenuItem value="desc">Descending</MenuItem>
+                      <MenuItem value="asc">Ascending</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
 
-                {/* Form Content */}
-                <div className="p-6">
-                  <form onSubmit={handleSubmit} className="space-y-6">
+          {/* ── Table ── */}
+          <Card>
+            <Box sx={{
+              px: 3, py: 2,
+              borderBottom: 1, borderColor: 'divider',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            }}>
+              <Typography variant="h6" sx={{ fontWeight: 600 }}>Cargo Records</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Showing {filteredAndSortedCargo.length} of {cargo.length} records
+              </Typography>
+            </Box>
+            <TableContainer>
+              <Table sx={{ minWidth: 750 }}>
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100' }}>Vehicle</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100' }}>Total Fare</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100' }}>Expenses</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100' }}>Net Amount</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100' }}>Created</TableCell>
+                    <TableCell align="center" sx={{ fontWeight: 'bold', bgcolor: 'grey.100' }}>Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {filteredAndSortedCargo.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} align="center">
+                        <Box sx={{ py: 8, textAlign: 'center' }}>
+                          <TruckIcon sx={{ fontSize: 64, color: 'text.disabled', mb: 2 }} />
+                          <Typography variant="h6" color="text.secondary" gutterBottom>
+                            No cargo records found
+                          </Typography>
+                          <Typography variant="body2" color="text.disabled">
+                            Add your first cargo record to get started.
+                          </Typography>
+                        </Box>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredAndSortedCargo.map((item) => {
+                      const net = calculateNetAmount(item);
+                      return (
+                        <TableRow key={item.cargo_id} sx={{ '&:hover': { bgcolor: 'grey.50' } }}>
+                          <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                              <Avatar sx={{
+                                background: 'linear-gradient(135deg, #2196F3, #3F51B5)',
+                                width: 38, height: 38,
+                              }}>
+                                <TruckIcon fontSize="small" />
+                              </Avatar>
+                              <Box>
+                                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                  {item.vehicle_no}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  #{item.sequentialId}
+                                </Typography>
+                              </Box>
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                              {parseFloat(item.total_cargo_fare).toLocaleString()}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" sx={{ fontWeight: 500, color: 'error.main' }}>
+                              {calculateTotalExpenses(item).toLocaleString()}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" sx={{
+                              fontWeight: 'bold',
+                              color: net >= 0 ? 'success.main' : 'error.main',
+                            }}>
+                              {net.toLocaleString()}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" color="text.secondary">
+                              {item.created_at ? new Date(item.created_at).toLocaleDateString() : '—'}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="center">
+                            <Tooltip title="Edit">
+                              <IconButton size="small" color="primary" onClick={() => handleEditCargo(item)}>
+                                <EditIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Delete">
+                              <IconButton size="small" color="error" onClick={() => handleDeleteConfirm(item)}>
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Card>
 
-                    {/* Vehicle Number */}
-                    <div className="group">
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        <Truck className="w-4 h-4 inline mr-2" />
-                        Vehicle Number <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        name="vehicle_no"
-                        value={formData.vehicle_no}
-                        onChange={(e) => setFormData(prev => ({ ...prev, vehicle_no: e.target.value }))}
-                        required
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200 bg-white hover:bg-gray-50 text-black"
-                        placeholder="Enter vehicle number"
-                      />
-                    </div>
+        </Stack>
+      </Container>
 
-                    {/* Total Cargo Fare */}
-                    <div className="group">
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        <DollarSign className="w-4 h-4 inline mr-2" />
-                        Total Cargo Fare
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        name="total_cargo_fare"
-                        value={formData.total_cargo_fare}
-                        onChange={handleFormChange}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200 bg-white hover:bg-gray-50 text-black"
-                        placeholder="Enter total cargo fare"
-                      />
-                    </div>
+      {/* ── Add / Edit Dialog ── */}
+      <Dialog
+        open={showCargoForm}
+        onClose={handleCloseForm}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{
+          background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
+          color: 'white',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)' }}>
+              <TruckIcon />
+            </Avatar>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 'bold', lineHeight: 1.2 }}>
+                {editingCargo ? 'Edit Cargo Record' : 'Add New Cargo Record'}
+              </Typography>
+              <Typography variant="caption" sx={{ opacity: 0.9 }}>
+                {editingCargo ? 'Update cargo information' : 'Create a new cargo record'}
+              </Typography>
+            </Box>
+          </Box>
+          <IconButton onClick={handleCloseForm} sx={{ color: 'white' }}>
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
 
-                    {/* Expenses Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      <div className="group">
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">
-                          Expense 1
-                        </label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          name="exp1"
-                          value={formData.exp1}
-                          onChange={handleFormChange}
-                          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200 bg-white hover:bg-gray-50 text-black"
-                          placeholder="0.00"
-                        />
-                      </div>
+        <DialogContent sx={{ pt: 3 }}>
+          <Stack spacing={3} sx={{ mt: 0.5 }}>
 
-                      <div className="group">
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">
-                          Expense 2
-                        </label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          name="exp2"
-                          value={formData.exp2}
-                          onChange={handleFormChange}
-                          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200 bg-white hover:bg-gray-50 text-black"
-                          placeholder="0.00"
-                        />
-                      </div>
+            {/* Vehicle Number */}
+            <TextField
+              fullWidth
+              label="Vehicle Number"
+              name="vehicle_no"
+              value={formData.vehicle_no}
+              onChange={(e) => setFormData(prev => ({ ...prev, vehicle_no: e.target.value }))}
+              required
+              placeholder="Enter vehicle number"
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <TruckIcon color="action" />
+                  </InputAdornment>
+                ),
+              }}
+            />
 
-                      <div className="group">
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">
-                          Expense 3
-                        </label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          name="exp3"
-                          value={formData.exp3}
-                          onChange={handleFormChange}
-                          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200 bg-white hover:bg-gray-50 text-black"
-                          placeholder="0.00"
-                        />
-                      </div>
+            {/* Total Cargo Fare */}
+            <TextField
+              fullWidth
+              label="Total Cargo Fare"
+              name="total_cargo_fare"
+              type="number"
+              inputProps={{ step: '0.01', min: 0 }}
+              value={formData.total_cargo_fare}
+              onChange={handleFormChange}
+              InputProps={{
+                startAdornment: <InputAdornment position="start">Rs</InputAdornment>,
+              }}
+            />
 
-                      <div className="group">
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">
-                          Expense 4
-                        </label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          name="exp4"
-                          value={formData.exp4}
-                          onChange={handleFormChange}
-                          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200 bg-white hover:bg-gray-50 text-black"
-                          placeholder="0.00"
-                        />
-                      </div>
+            {/* Expenses 1–6 */}
+            <Box>
+              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1.5 }}>
+                Expenses
+              </Typography>
+              <Grid container spacing={2}>
+                {expenseFields.map(({ name, label }) => (
+                  <Grid item xs={12} sm={6} md={4} key={name}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      label={label}
+                      name={name}
+                      type="number"
+                      inputProps={{ step: '0.01', min: 0 }}
+                      value={formData[name]}
+                      onChange={handleFormChange}
+                      placeholder="0.00"
+                      InputProps={{
+                        startAdornment: <InputAdornment position="start">Rs</InputAdornment>,
+                      }}
+                    />
+                  </Grid>
+                ))}
+              </Grid>
+            </Box>
 
-                      <div className="group">
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">
-                          Expense 5
-                        </label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          name="exp5"
-                          value={formData.exp5}
-                          onChange={handleFormChange}
-                          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200 bg-white hover:bg-gray-50 text-black"
-                          placeholder="0.00"
-                        />
-                      </div>
+            {/* Other Expenses */}
+            <TextField
+              fullWidth
+              label="Other Expenses"
+              name="others"
+              type="number"
+              inputProps={{ step: '0.01', min: 0 }}
+              value={formData.others}
+              onChange={handleFormChange}
+              placeholder="0.00"
+              InputProps={{
+                startAdornment: <InputAdornment position="start">Rs</InputAdornment>,
+              }}
+            />
 
-                      <div className="group">
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">
-                          Expense 6
-                        </label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          name="exp6"
-                          value={formData.exp6}
-                          onChange={handleFormChange}
-                          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200 bg-white hover:bg-gray-50 text-black"
-                          placeholder="0.00"
-                        />
-                      </div>
-                    </div>
+          </Stack>
+        </DialogContent>
 
-                    {/* Others */}
-                    <div className="group">
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        Other Expenses
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        name="others"
-                        value={formData.others}
-                        onChange={handleFormChange}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200 bg-white hover:bg-gray-50 text-black"
-                        placeholder="Enter other expenses"
-                      />
-                    </div>
+        <DialogActions sx={{ p: 3, borderTop: 1, borderColor: 'divider' }}>
+          <Button onClick={handleCloseForm} variant="outlined">
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            variant="contained"
+            startIcon={<CheckIcon />}
+            sx={{
+              background: 'linear-gradient(45deg, #2196F3 30%, #9C27B0 90%)',
+              '&:hover': { background: 'linear-gradient(45deg, #1976D2 30%, #7B1FA2 90%)' },
+            }}
+          >
+            {editingCargo ? 'Update Cargo' : 'Create Cargo'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
-                    {/* Action Buttons */}
-                    <div className="flex items-center justify-end space-x-4 pt-4 border-t border-gray-200">
-                      <button
-                        type="button"
-                        onClick={() => setShowCargoForm(false)}
-                        className="px-6 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-all duration-200"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        className="group px-8 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg hover:from-blue-600 hover:to-purple-600 transition-all duration-200 shadow-md hover:shadow-lg"
-                      >
-                        <span className="flex items-center">
-                          {editingCargo ? 'Update Cargo' : 'Create Cargo'}
-                          <Check className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform duration-200" />
-                        </span>
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+      {/* ── Delete Confirmation Dialog ── */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle>Delete Cargo Record</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete the record for{' '}
+            <strong>{cargoToDelete?.vehicle_no}</strong>? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setDeleteDialogOpen(false)} variant="outlined">
+            Cancel
+          </Button>
+          <Button onClick={handleDeleteCargo} color="error" variant="contained">
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ── Snackbar ── */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={4000}
+        onClose={() => setSnackbar(s => ({ ...s, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert
+          severity={snackbar.severity}
+          onClose={() => setSnackbar(s => ({ ...s, open: false }))}
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
+
     </DashboardLayout>
   );
 }
