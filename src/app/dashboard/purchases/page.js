@@ -167,6 +167,53 @@ export default function PurchasesPage() {
   const [customerTypes, setCustomerTypes] = useState([]);
   const [cities, setCities] = useState([]);
 
+  // Quick-add mini dialog states
+  const [quickAddDialog, setQuickAddDialog] = useState({ open: false, type: '', value: '' });
+  const [quickAddLoading, setQuickAddLoading] = useState(false);
+
+  const openQuickAdd = (type) => setQuickAddDialog({ open: true, type, value: '' });
+  const closeQuickAdd = () => setQuickAddDialog({ open: false, type: '', value: '' });
+
+  const handleQuickAddSubmit = async () => {
+    if (!quickAddDialog.value.trim()) return;
+    setQuickAddLoading(true);
+    try {
+      let url = '', body = {};
+      if (quickAddDialog.type === 'category') {
+        url = '/api/customer-category';
+        body = { cus_cat_title: quickAddDialog.value.trim() };
+      } else if (quickAddDialog.type === 'type') {
+        url = '/api/customer-types';
+        body = { cus_type_title: quickAddDialog.value.trim() };
+      } else if (quickAddDialog.type === 'city') {
+        url = '/api/cities';
+        body = { city_name: quickAddDialog.value.trim() };
+      }
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (res.ok) {
+        const created = await res.json();
+        if (quickAddDialog.type === 'category') {
+          setCustomerCategories(prev => [...prev, created]);
+          setCustomerFormData(prev => ({ ...prev, cus_category: created.cus_cat_id }));
+        } else if (quickAddDialog.type === 'type') {
+          setCustomerTypes(prev => [...prev, created]);
+          setCustomerFormData(prev => ({ ...prev, cus_type: created.cus_type_id }));
+        } else if (quickAddDialog.type === 'city') {
+          setCities(prev => [...prev, created]);
+          setCustomerFormData(prev => ({ ...prev, city_id: created.city_id }));
+        }
+        closeQuickAdd();
+        setSnackbar({ open: true, message: `${quickAddDialog.type.charAt(0).toUpperCase() + quickAddDialog.type.slice(1)} added successfully!`, severity: 'success' });
+      } else {
+        const err = await res.json();
+        setSnackbar({ open: true, message: err.error || 'Failed to add', severity: 'error' });
+      }
+    } catch {
+      setSnackbar({ open: true, message: 'Failed to add', severity: 'error' });
+    } finally {
+      setQuickAddLoading(false);
+    }
+  };
 
   // Filter states
   const [searchTerm, setSearchTerm] = useState('');
@@ -2449,15 +2496,16 @@ export default function PurchasesPage() {
           </IconButton>
         </DialogTitle>
 
-        <DialogContent sx={{ pt: 3, px: 3, pb: 1 }}>
+        <DialogContent sx={{ pt: 2, px: 3, pb: 2 }}>
           <form id="quick-add-product-form" onSubmit={handleQuickAddProduct}>
-            <Grid container spacing={3}>
+            <Grid container spacing={2} rowSpacing={3} sx={{ mt: 0.5 }}>
               {/* Row 1: Title, Description, Category */}
               <Grid item xs={12} md={4}>
                 <TextField
                   label="Product Title *"
                   fullWidth
                   required
+                  sx={{ minWidth: 300 }}
                   value={newProductData.pro_title}
                   onChange={(e) => setNewProductData(prev => ({ ...prev, pro_title: e.target.value }))}
                 />
@@ -2468,12 +2516,13 @@ export default function PurchasesPage() {
                   fullWidth
                   multiline
                   rows={1}
+                  sx={{ minWidth: 300 }}
                   value={newProductData.pro_description}
                   onChange={(e) => setNewProductData(prev => ({ ...prev, pro_description: e.target.value }))}
                 />
               </Grid>
               <Grid item xs={12} md={4}>
-                <FormControl fullWidth required sx={{ minWidth: 180 }}>
+                <FormControl fullWidth required sx={{ minWidth: 300 }}>
                   <InputLabel>Category *</InputLabel>
                   <Select
                     label="Category *"
@@ -2489,7 +2538,7 @@ export default function PurchasesPage() {
 
               {/* Row 2: Subcategory, Cost Price, Sale Price */}
               <Grid item xs={12} md={4}>
-                <FormControl fullWidth sx={{ minWidth: 180 }}>
+                <FormControl fullWidth sx={{ minWidth: 300 }}>
                   <InputLabel>Subcategory</InputLabel>
                   <Select
                     label="Subcategory"
@@ -2509,6 +2558,7 @@ export default function PurchasesPage() {
                   label="Cost Price"
                   fullWidth
                   type="number"
+                  sx={{ minWidth: 300 }}
                   inputProps={{ step: 0.01, min: 0 }}
                   value={newProductData.pro_cost_price}
                   onChange={(e) => setNewProductData(prev => ({ ...prev, pro_cost_price: e.target.value }))}
@@ -2520,6 +2570,7 @@ export default function PurchasesPage() {
                   label="Sale Price"
                   fullWidth
                   type="number"
+                  sx={{ minWidth: 300 }}
                   inputProps={{ step: 0.01, min: 0 }}
                   value={newProductData.pro_sale_price}
                   onChange={(e) => setNewProductData(prev => ({ ...prev, pro_sale_price: e.target.value }))}
@@ -2533,6 +2584,7 @@ export default function PurchasesPage() {
                   label="Base Price"
                   fullWidth
                   type="number"
+                  sx={{ minWidth: 300 }}
                   inputProps={{ step: 0.01, min: 0 }}
                   value={newProductData.pro_baser_price}
                   onChange={(e) => setNewProductData(prev => ({ ...prev, pro_baser_price: e.target.value }))}
@@ -2544,6 +2596,7 @@ export default function PurchasesPage() {
                   label="CRate"
                   fullWidth
                   type="number"
+                  sx={{ minWidth: 300 }}
                   inputProps={{ step: 0.01, min: 0 }}
                   value={newProductData.pro_crate}
                   onChange={(e) => setNewProductData(prev => ({ ...prev, pro_crate: e.target.value }))}
@@ -2554,37 +2607,41 @@ export default function PurchasesPage() {
                   label="Stock Quantity"
                   fullWidth
                   type="number"
+                  sx={{ minWidth: 300 }}
                   inputProps={{ min: 0 }}
                   value={newProductData.pro_stock_qnty}
                   onChange={(e) => setNewProductData(prev => ({ ...prev, pro_stock_qnty: e.target.value }))}
                 />
               </Grid>
+
+              {/* Row 4: Low Stock, Unit, Packing */}
               <Grid item xs={12} md={4}>
                 <TextField
                   label="Low Stock Alert"
                   fullWidth
                   type="number"
+                  sx={{ minWidth: 300 }}
                   inputProps={{ min: 0 }}
                   placeholder="e.g. 5"
                   value={newProductData.pro_low_stock}
                   onChange={(e) => setNewProductData(prev => ({ ...prev, pro_low_stock: e.target.value }))}
                 />
               </Grid>
-
-              {/* Row 4: Unit, Packing */}
-              <Grid item xs={12} md={6}>
+              <Grid item xs={12} md={4}>
                 <TextField
                   label="Unit"
                   fullWidth
+                  sx={{ minWidth: 300 }}
                   placeholder="e.g. KG, Ton, Bag"
                   value={newProductData.pro_unit}
                   onChange={(e) => setNewProductData(prev => ({ ...prev, pro_unit: e.target.value }))}
                 />
               </Grid>
-              <Grid item xs={12} md={6}>
+              <Grid item xs={12} md={4}>
                 <TextField
                   label="Packing"
                   fullWidth
+                  sx={{ minWidth: 300 }}
                   placeholder="e.g. 50kg bag"
                   value={newProductData.pro_packing}
                   onChange={(e) => setNewProductData(prev => ({ ...prev, pro_packing: e.target.value }))}
@@ -2737,39 +2794,53 @@ export default function PurchasesPage() {
               </Grid>
 
               <Grid item xs={12} md={4}>
-                <FormControl fullWidth required sx={{ minWidth: 250 }}>
-                  <InputLabel>Customer Type</InputLabel>
-                  <Select
-                    name="cus_type"
-                    value={customerFormData.cus_type}
-                    label="Customer Type"
-                    onChange={handleCustomerFormChange}
-                  >
-                    {customerTypes.map(type => (
-                      <MenuItem key={type.cus_type_id} value={type.cus_type_id}>
-                        {type.cus_type_title}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <FormControl fullWidth required sx={{ minWidth: 250 }}>
+                    <InputLabel>Customer Type</InputLabel>
+                    <Select
+                      name="cus_type"
+                      value={customerFormData.cus_type}
+                      label="Customer Type"
+                      onChange={handleCustomerFormChange}
+                    >
+                      {customerTypes.map(type => (
+                        <MenuItem key={type.cus_type_id} value={type.cus_type_id}>
+                          {type.cus_type_title}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <Tooltip title="Add new type">
+                    <IconButton size="small" onClick={() => openQuickAdd('type')} sx={{ bgcolor: 'primary.main', color: 'white', '&:hover': { bgcolor: 'primary.dark' }, flexShrink: 0 }}>
+                      <AddIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
               </Grid>
 
               <Grid item xs={12} md={4}>
-                <FormControl fullWidth required sx={{ minWidth: 250 }}>
-                  <InputLabel>Customer Category</InputLabel>
-                  <Select
-                    name="cus_category"
-                    value={customerFormData.cus_category}
-                    label="Customer Category"
-                    onChange={handleCustomerFormChange}
-                  >
-                    {customerCategories.map(category => (
-                      <MenuItem key={category.cus_cat_id} value={category.cus_cat_id}>
-                        {category.cus_cat_title}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <FormControl fullWidth required sx={{ minWidth: 250 }}>
+                    <InputLabel>Customer Category</InputLabel>
+                    <Select
+                      name="cus_category"
+                      value={customerFormData.cus_category}
+                      label="Customer Category"
+                      onChange={handleCustomerFormChange}
+                    >
+                      {customerCategories.map(category => (
+                        <MenuItem key={category.cus_cat_id} value={category.cus_cat_id}>
+                          {category.cus_cat_title}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <Tooltip title="Add new category">
+                    <IconButton size="small" onClick={() => openQuickAdd('category')} sx={{ bgcolor: 'primary.main', color: 'white', '&:hover': { bgcolor: 'primary.dark' }, flexShrink: 0 }}>
+                      <AddIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
               </Grid>
 
               {/* Row 3: Reference, Account Info, CNIC */}
@@ -2865,21 +2936,28 @@ export default function PurchasesPage() {
               </Grid>
 
               <Grid item xs={12} md={4}>
-                <FormControl fullWidth required sx={{ minWidth: 250 }}>
-                  <InputLabel>City</InputLabel>
-                  <Select
-                    name="city_id"
-                    value={customerFormData.city_id}
-                    label="City"
-                    onChange={handleCustomerFormChange}
-                  >
-                    {cities.map(city => (
-                      <MenuItem key={city.city_id} value={city.city_id}>
-                        {city.city_name}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <FormControl fullWidth required sx={{ minWidth: 250 }}>
+                    <InputLabel>City</InputLabel>
+                    <Select
+                      name="city_id"
+                      value={customerFormData.city_id}
+                      label="City"
+                      onChange={handleCustomerFormChange}
+                    >
+                      {cities.map(city => (
+                        <MenuItem key={city.city_id} value={city.city_id}>
+                          {city.city_name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <Tooltip title="Add new city">
+                    <IconButton size="small" onClick={() => openQuickAdd('city')} sx={{ bgcolor: 'primary.main', color: 'white', '&:hover': { bgcolor: 'primary.dark' }, flexShrink: 0 }}>
+                      <AddIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
               </Grid>
 
               {/* Row 5: Balance, Other Information */}
@@ -2947,6 +3025,37 @@ export default function PurchasesPage() {
             }}
           >
             {isSubmittingCustomer ? 'Adding...' : 'Add Supplier'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Quick Add Category/Type/City Mini Dialog */}
+      <Dialog open={quickAddDialog.open} onClose={closeQuickAdd} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
+        <DialogTitle sx={{ bgcolor: 'primary.main', color: 'white', py: 2 }}>
+          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+            {quickAddDialog.type === 'category' ? 'Add Customer Category' : quickAddDialog.type === 'type' ? 'Add Customer Type' : 'Add City'}
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 3, pb: 1, px: 3 }}>
+          <TextField
+            autoFocus
+            fullWidth
+            label={quickAddDialog.type === 'category' ? 'Category Name' : quickAddDialog.type === 'type' ? 'Type Name' : 'City Name'}
+            value={quickAddDialog.value}
+            onChange={(e) => setQuickAddDialog(prev => ({ ...prev, value: e.target.value }))}
+            onKeyDown={(e) => e.key === 'Enter' && handleQuickAddSubmit()}
+            sx={{ mt: 1 }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3, gap: 1 }}>
+          <Button variant="outlined" onClick={closeQuickAdd}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleQuickAddSubmit}
+            disabled={quickAddLoading || !quickAddDialog.value.trim()}
+            startIcon={quickAddLoading ? <CircularProgress size={16} color="inherit" /> : <AddIcon />}
+          >
+            {quickAddLoading ? 'Adding...' : 'Add'}
           </Button>
         </DialogActions>
       </Dialog>
