@@ -192,6 +192,7 @@ export default function PurchasesPage() {
     pro_baser_price: '',
     pro_crate: '',
     pro_stock_qnty: '',
+    pro_low_stock: '',
     pro_unit: '',
     pro_packing: '',
     cat_id: '',
@@ -494,7 +495,7 @@ export default function PurchasesPage() {
         setNewProductData({
           pro_title: '', pro_description: '', pro_cost_price: '',
           pro_sale_price: '', pro_baser_price: '', pro_crate: '',
-          pro_stock_qnty: '', pro_unit: '', pro_packing: '', cat_id: '', sub_cat_id: ''
+          pro_stock_qnty: '', pro_low_stock: '', pro_unit: '', pro_packing: '', cat_id: '', sub_cat_id: ''
         });
         setSnackbar({ open: true, message: 'Product created and selected!', severity: 'success' });
       } else {
@@ -2556,6 +2557,17 @@ export default function PurchasesPage() {
                   inputProps={{ min: 0 }}
                   value={newProductData.pro_stock_qnty}
                   onChange={(e) => setNewProductData(prev => ({ ...prev, pro_stock_qnty: e.target.value }))}
+                />
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <TextField
+                  label="Low Stock Alert"
+                  fullWidth
+                  type="number"
+                  inputProps={{ min: 0 }}
+                  placeholder="e.g. 5"
+                  value={newProductData.pro_low_stock}
+                  onChange={(e) => setNewProductData(prev => ({ ...prev, pro_low_stock: e.target.value }))}
                 />
               </Grid>
 
